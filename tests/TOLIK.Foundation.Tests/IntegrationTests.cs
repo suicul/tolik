@@ -675,6 +675,64 @@ public sealed class AuditIntegrationTests
     }
 }
 
+public sealed class StrictJsonBoundaryTests
+{
+    [Fact]
+    public async Task Memory_rejects_unknown_field_and_accepts_control()
+    {
+        using var factory = new CoreHostFactory();
+        using var client = factory.CreateClient();
+
+        var sessionToken = await TestEnrollment.EnrollOwnerAsync(client);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sessionToken);
+
+        var marker = "strict факт " + Guid.NewGuid().ToString("N");
+
+        // Control: same payload without the extra prop still succeeds.
+        var control = await client.PostAsJsonAsync("/memory", new
+        {
+            scope = "Private",
+            content = marker,
+            source = "test",
+            confidence = 0.9
+        });
+        Assert.Equal(HttpStatusCode.OK, control.StatusCode);
+
+        // Unknown field → 400 (UnmappedMemberHandling.Disallow at the HTTP boundary).
+        var bad = await client.PostAsJsonAsync("/memory", new
+        {
+            scope = "Private",
+            content = marker,
+            source = "test",
+            confidence = 0.9,
+            injectedField = "should_be_rejected"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+
+    [Fact]
+    public async Task Tasks_rejects_unknown_field_and_accepts_control()
+    {
+        using var factory = new CoreHostFactory();
+        using var client = factory.CreateClient();
+
+        var sessionToken = await TestEnrollment.EnrollOwnerAsync(client);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sessionToken);
+
+        // Control: declared-only payload is accepted (202).
+        var control = await client.PostAsJsonAsync("/tasks", new { description = "strict boundary probe" });
+        Assert.Equal(HttpStatusCode.Accepted, control.StatusCode);
+
+        // Unknown field → 400.
+        var bad = await client.PostAsJsonAsync("/tasks", new
+        {
+            description = "strict boundary probe",
+            injectedField = "should_be_rejected"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
+}
+
 // Response DTOs
 file sealed record ChallengeResponse(string challenge, DateTimeOffset expiresAt);
 file sealed record LocalTokenResponse(string sessionToken, Guid sessionId, DateTimeOffset expiresAt);

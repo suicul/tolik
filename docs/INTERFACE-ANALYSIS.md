@@ -61,6 +61,6 @@ README описывает два UI-режима (Chat + Cephalon-глаз) — 
 - [ ] Confirmation record с `bindingHash`, одноразовое потребление
 - [ ] Lease: TTL 60s, offline-режим = read-only capabilities
 - [ ] LOCKED state в Core.Host (2 известные расхождения из README синхронизировать)
-- [ ] Envelope-валидация: unknown fields → 400, strict canonical JSON
+- [x] Envelope-валидация: unknown fields → 400, strict canonical JSON — IMPLEMENTED: global UnmappedMemberHandling.Disallow in ConfigureHttpJsonOptions (Program.cs), unknown fields auto-400 on all POST DTO bindings, producer pre-check clean, 2 tests, 02.10.2026.
 - [ ] Roles: Guest/TrustedGuest/Family/Owner + risk ceilings в AuthorizationPolicy
 - [x] Запрет command-surface (`FORBIDDEN_SURFACE_KEYS`) — IMPLEMENTED: C# enforcement via CommandArgumentPolicy denylist (ProtocolContracts.Validate + AgentTransportAuthorization.Evaluate Deny), 2 tests, 01.10.2026.

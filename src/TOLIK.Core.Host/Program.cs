@@ -97,6 +97,8 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     // Use null naming policy to preserve PascalCase enum values (agent sends "RunProcess", not "runProcess")
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(null));
     options.SerializerOptions.Converters.Add(new ImmutableSetConverterFactory());
+    // Bounded hardening: reject unknown JSON fields at the HTTP boundary (auto-400 on all POST DTOs).
+    options.SerializerOptions.UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow;
 });
 
 var app = builder.Build();
