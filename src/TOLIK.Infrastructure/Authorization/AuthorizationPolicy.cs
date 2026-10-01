@@ -40,7 +40,7 @@ public static class ToolEscalation
         new EscalationRule(
             "security-critical-source",
             AgentCapability.WriteFile,
-            new Regex(@"(ProtocolContracts\.cs|CoreRuntime\.cs|AgentRuntime\.cs|AuthorizationEngine\.cs|AuthorizationPolicy\.cs|ToolEscalation\.cs|SecurityLogging\.cs|AuditWriter\.cs|DeviceChallengeVerifier\.cs)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex(@"(ProtocolContracts\.cs|CoreRuntime\.cs|AgentRuntime\.cs|AuthorizationEngine\.cs|AuthorizationPolicy\.cs|ToolEscalation\.cs|TolikRoles\.cs|SecurityLogging\.cs|AuditWriter\.cs|DeviceChallengeVerifier\.cs)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
             ToolRiskLevel.Critical,
             RequireConfirmation: true,
             Reason: "modifying TOLIK's own security-critical source can bypass authorization (T13)"),
@@ -92,11 +92,10 @@ public static class AuthorizationPolicy
     public static AuthorizationDecision Evaluate(AuthorizationRequest request)
     {
         var now = request.EvaluatedAt ?? DateTimeOffset.UtcNow;
-        if (!request.PolicyAvailable || request.Principal is null || !request.SessionValid || !request.DeviceValid ||
+        var role = TolikRoles.Parse(request.Principal?.Role);
+        if (!request.PolicyAvailable || request.Principal is null || role is null || role is IdentityRole.Guest ||
+            !request.SessionValid || !request.DeviceValid ||
             !request.AgentAuthorized || !request.TaskScopeValid || !request.CapabilityGranted ||
-            string.IsNullOrWhiteSpace(request.Principal.Role) ||
-            !string.Equals(request.Principal.Role, "Owner", StringComparison.Ordinal) &&
-            !string.Equals(request.Principal.Role, "AuthorizedUser", StringComparison.Ordinal) ||
             request.Risk == ToolRiskLevel.Critical && !request.MfaValid ||
             string.IsNullOrWhiteSpace(request.Resource) || string.IsNullOrWhiteSpace(request.AllowedResource) ||
             !string.Equals(request.Resource, request.AllowedResource, StringComparison.Ordinal) ||
@@ -110,6 +109,14 @@ public static class AuthorizationPolicy
         var effectiveRisk = request.Risk;
         var (escalatedRisk, _) = ToolEscalation.Evaluate(request.Capability, request.Resource);
         if (escalatedRisk > effectiveRisk) effectiveRisk = escalatedRisk;
+
+        // Role ceiling (T15): effective risk may never exceed the principal's ceiling —
+        // a hard Deny that confirmation and MFA cannot rescue. This runs after escalation
+        // and before any confirmation is issued, so an above-ceiling step can never be
+        // parked/approved through an alternate decision path. Fail closed.
+        var ceiling = TolikRoles.CeilingFor(role.Value);
+        if (ceiling is null || effectiveRisk > ceiling)
+            return AuthorizationDecision.Deny;
 
         return effectiveRisk switch
         {

@@ -761,7 +761,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
     var confirmation = confirmations.Get(confirmationId);
     if (confirmation is null || confirmation.TaskId != taskId)
         return Results.NotFound(new { error = "confirmation_not_found" });
-    if (!string.Equals(principal.Role, "Owner", StringComparison.Ordinal))
+    if (!TolikRoles.IsOwner(principal.Role))
     {
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "confirmation.approve", "DENY", "owner_role_required", principal,
             confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "denied", cancellationToken);
@@ -1012,7 +1012,7 @@ app.MapGet("/audit", async (int? take, int? skip, HttpContext context, IdentityS
     if (count is < 1 or > 100 || offset < 0) return Results.BadRequest(new { error = "invalid_pagination" });
     await using var db = await factory.CreateDbContextAsync(cancellationToken);
     var query = db.AuditEvents.AsNoTracking().OrderByDescending(x => x.OccurredAt).ThenByDescending(x => x.Id);
-    if (string.Equals(principal.Role, "Owner", StringComparison.Ordinal))
+    if (TolikRoles.IsOwner(principal.Role))
         return Results.Ok(await query.Skip(offset).Take(count).ToListAsync(cancellationToken));
     var ownId = principal.UserId.ToString("D");
     return Results.Ok(await query.Where(x => x.UserId == ownId).Skip(offset).Take(count).ToListAsync(cancellationToken));

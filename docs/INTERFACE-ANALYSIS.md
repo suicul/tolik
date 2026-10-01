@@ -58,9 +58,9 @@ README описывает два UI-режима (Chat + Cephalon-глаз) — 
 ## Прямые TODO из прототипа в backlog C#
 
 - [ ] `ESCALATION_RULES` → `AuthorizationPolicy` (security-config → Destructive, security-critical-source → Critical, RunCodex → Modify+confirm)
-- [ ] Confirmation record с `bindingHash`, одноразовое потребление
+- [x] Confirmation record с `bindingHash`, одноразовое потребление — IMPLEMENTED: `ConfirmationStore` (src/TOLIK.Infrastructure/Authorization/ConfirmationStore.cs), canonical SHA-256 binding Hash(taskId,step,capability,resource), Approve/Consume split with Consumed flag, consumed fresh per dispatch step (Program.cs DispatchGuardedAsync), 02.10.2026.
 - [ ] Lease: TTL 60s, offline-режим = read-only capabilities
 - [ ] LOCKED state в Core.Host (2 известные расхождения из README синхронизировать)
 - [x] Envelope-валидация: unknown fields → 400, strict canonical JSON — IMPLEMENTED: global UnmappedMemberHandling.Disallow in ConfigureHttpJsonOptions (Program.cs), unknown fields auto-400 on all POST DTO bindings, producer pre-check clean, 2 tests, 02.10.2026.
-- [ ] Roles: Guest/TrustedGuest/Family/Owner + risk ceilings в AuthorizationPolicy
+- [x] Roles: risk ceilings в AuthorizationPolicy — IMPLEMENTED: `TolikRoles` (src/TOLIK.Infrastructure/Identity/TolikRoles.cs), typed parse of the existing Guest/AuthorizedUser/Owner roles (unknown/variant names fail closed), ceilings Owner→Critical, AuthorizedUser→Destructive, Guest→deny; enforced on effective (post-escalation) risk, hard Deny, not rescuable by confirmation/MFA, 02.10.2026. Family/TrustedGuest roles deferred — no enrollment path yet.
 - [x] Запрет command-surface (`FORBIDDEN_SURFACE_KEYS`) — IMPLEMENTED: C# enforcement via CommandArgumentPolicy denylist (ProtocolContracts.Validate + AgentTransportAuthorization.Evaluate Deny), 2 tests, 01.10.2026.

@@ -28,12 +28,31 @@ authorization layer decides.
 Guest role: always denied. Voice confidence alone never authorizes
 (`IdentityEvidence`: authenticated user id must equal requested user id).
 
+## Role ceilings
+
+Roles are typed (`TolikRoles`, code
+`src/TOLIK.Infrastructure/Identity/TolikRoles.cs`) from the `IdentityRole`
+contract. Unknown, empty or case-variant role names fail closed — they never
+accidentally match a privileged role. The **ceiling** is the maximum
+**effective** risk (after escalation, T13) a role can ever be authorized for;
+it is a hard Deny that confirmation and MFA cannot rescue (T15):
+
+| Role | Ceiling | Notes |
+|---|---|---|
+| Owner | `Critical` | Critical still requires confirmation AND MFA (gap C4: currently always Deny). |
+| AuthorizedUser | `Destructive` | HIGH band per matrix above; never Critical. |
+| Guest | none | Always denied outright — no ceiling applies. |
+
+Ceiling denials run after escalation and before any confirmation is issued, so
+an above-ceiling step can never be parked or approved through an alternate
+decision path.
+
 ## Escalation rules (automatic upgrades)
 
 - `WriteFile` onto build/policy/identity paths (`.git/hooks`, `nuget.config`,
   `Directory.Build.*`, `.tolik/*`, `policy.json`, `CODEOWNERS`) → Destructive + confirm.
-- `WriteFile` onto security sources (`AuthorizationPolicy.cs`, `AuditWriter.cs`,
-  `DeviceChallengeVerifier.cs`, …) → Critical + confirm.
+- `WriteFile` onto security sources (`AuthorizationPolicy.cs`, `TolikRoles.cs`,
+  `AuditWriter.cs`, `DeviceChallengeVerifier.cs`, …) → Critical + confirm.
 - Any `RunCodex` → Modify + confirm (codex-autonomy rule).
 
 ## Confirmations

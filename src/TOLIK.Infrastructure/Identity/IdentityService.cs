@@ -76,8 +76,8 @@ public sealed class IdentityService(IDbContextFactory<TolikDbContext> contextFac
         }
         var verifiedBootstrap = bootstrap!;
         var verifiedChallenge = challenge!;
-        if (await db.Users.AnyAsync(x => x.Role == "Owner" && !x.Revoked, cancellationToken)) throw new InvalidOperationException("Owner enrollment has already been consumed.");
-        var user = new TolikUser { Id = Guid.NewGuid(), Role = "Owner", CreatedAt = now };
+        if (await db.Users.AnyAsync(x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken)) throw new InvalidOperationException("Owner enrollment has already been consumed.");
+        var user = new TolikUser { Id = Guid.NewGuid(), Role = TolikRoles.OwnerName, CreatedAt = now };
         var device = new TolikDevice { Id = Guid.NewGuid(), UserId = user.Id, InstallationId = installationId, PublicKey = publicKey, CreatedAt = now };
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var session = new TolikSession { Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id, TokenHash = HashToken(token), CreatedAt = now, ExpiresAt = now.Add(sessionLifetime) };
@@ -96,7 +96,7 @@ public sealed class IdentityService(IDbContextFactory<TolikDbContext> contextFac
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        var user = await db.Users.SingleOrDefaultAsync(x => x.Role == "Owner" && !x.Revoked, cancellationToken);
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken);
         if (user is null) return null;
         var device = await db.Devices.Where(x => x.UserId == user.Id && !x.Revoked).OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(cancellationToken);
         if (device is null) return null;

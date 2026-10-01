@@ -55,6 +55,15 @@ public sealed class ToolEscalationTests
     }
 
     [Fact]
+    public void WriteFile_to_TolikRoles_cs_escalates_to_Critical()
+    {
+        // The typed role/ceiling model is security-critical source (T13).
+        var (risk, rule) = ToolEscalation.Evaluate(AgentCapability.WriteFile, "src/TOLIK.Infrastructure/Identity/TolikRoles.cs");
+        Assert.Equal(ToolRiskLevel.Critical, risk);
+        Assert.Equal("security-critical-source", rule!.Name);
+    }
+
+    [Fact]
     public void RunCodex_always_escalates_to_Modify()
     {
         var (risk, rule) = ToolEscalation.Evaluate(AgentCapability.RunCodex, "C:/work/project");
