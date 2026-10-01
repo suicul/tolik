@@ -82,7 +82,8 @@ public sealed class MemoryCompactionService(
             $"[Сводка памяти] {summary}",
             "memory.compaction",
             confidence,
-            cancellationToken);
+            cancellationToken,
+            origin: MemoryOrigin.System);
 
         foreach (var memory in toCompact)
             await durableMemory.MarkCompactedAsync(memory.Id, cancellationToken);

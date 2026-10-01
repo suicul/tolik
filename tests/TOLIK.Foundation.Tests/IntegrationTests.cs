@@ -416,6 +416,70 @@ public sealed class MemoryIntegrationTests
         using var client = factory.CreateClient();
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.DeleteAsync($"/memory/{Guid.NewGuid():D}")).StatusCode);
     }
+
+    [Fact]
+    public async Task Development_can_reset_owner_memory()
+    {
+        using var factory = new CoreHostFactory();
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<DurableMemoryStore>();
+        var owner = Guid.NewGuid();
+        var other = Guid.NewGuid();
+
+        await store.AddAsync(owner, MemoryScope.Private, "a", "test", 0.9, origin: MemoryOrigin.Lived);
+        await store.AddAsync(owner, MemoryScope.Shared, "b", "test", 0.9, origin: MemoryOrigin.Imported);
+        await store.AddAsync(other, MemoryScope.Private, "c", "test", 0.9, origin: MemoryOrigin.Lived);
+
+        Assert.Equal(2, await store.DeleteAllAsync(owner));
+        Assert.Empty(await store.SearchAsync(owner, "a"));
+        Assert.Empty(await store.SearchAsync(owner, "b"));
+        Assert.Single(await store.SearchAsync(other, "c"));
+        Assert.Equal(0, await store.DeleteAllAsync(owner));
+    }
+
+    [Fact]
+    public async Task Memory_origin_round_trips_and_bad_origin_rejected()
+    {
+        using var factory = new CoreHostFactory();
+        using var client = factory.CreateClient();
+
+        var sessionToken = await TestEnrollment.EnrollOwnerAsync(client);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sessionToken);
+
+        var marker = "origin факт " + Guid.NewGuid().ToString("N");
+        var imported = await client.PostAsJsonAsync("/memory", new
+        {
+            scope = "Private",
+            content = marker,
+            source = "test",
+            confidence = 0.9,
+            origin = "imported"
+        });
+        Assert.Equal(HttpStatusCode.OK, imported.StatusCode);
+        var created = await imported.Content.ReadFromJsonAsync<MemoryApiItem>();
+        Assert.Equal("imported", created!.origin);
+
+        var defaulted = await client.PostAsJsonAsync("/memory", new
+        {
+            scope = "Private",
+            content = marker + " lived",
+            source = "test",
+            confidence = 0.9
+        });
+        Assert.Equal(HttpStatusCode.OK, defaulted.StatusCode);
+        var createdDefault = await defaulted.Content.ReadFromJsonAsync<MemoryApiItem>();
+        Assert.Equal("lived", createdDefault!.origin);
+
+        var bad = await client.PostAsJsonAsync("/memory", new
+        {
+            scope = "Private",
+            content = marker,
+            source = "test",
+            confidence = 0.9,
+            origin = "nope"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
 }
 
 public sealed class MultiStepIntegrationTests
@@ -618,5 +682,5 @@ file sealed record EnrollResponse(Guid userId, Guid deviceId, Guid sessionId, st
 file sealed record ConnectResponse(bool connected, Guid agentId, string[] capabilities);
 file sealed record TaskResponse(Guid id, string description, string status);
 file sealed record ExecuteResponse(Guid taskId, List<string> results);
-file sealed record MemoryApiItem(Guid id, Guid ownerId, string scope, string content, string source, double confidence, DateTimeOffset createdAt);
+file sealed record MemoryApiItem(Guid id, Guid ownerId, string scope, string content, string source, double confidence, DateTimeOffset createdAt, string? origin);
 file sealed record AuditApiItem(Guid id, string eventType, string decision, string reason, string? userId, DateTimeOffset occurredAt);

@@ -74,6 +74,8 @@ public sealed class TolikMemoryEntity
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Set when the memory was folded into a compaction summary; content is kept for audit.</summary>
     public DateTimeOffset? CompactedAt { get; set; }
+    /// <summary>Provenance origin: lived|imported|system|development (§10-11). Legacy rows backfill as lived (ADR-001).</summary>
+    public string Origin { get; set; } = "lived";
 }
 
 public sealed class TolikLearnedRuleEntity

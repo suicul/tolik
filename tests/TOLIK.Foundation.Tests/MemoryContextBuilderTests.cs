@@ -9,7 +9,7 @@ public sealed class MemoryContextBuilderTests
     {
         var owner = Guid.NewGuid();
         var memories = Enumerable.Range(0, 12)
-            .Select(index => new MemoryItem(Guid.NewGuid(), owner, MemoryScope.Private, $"memory-{index}", "test", 0.9, DateTimeOffset.UtcNow))
+            .Select(index => new MemoryItem(Guid.NewGuid(), owner, MemoryScope.Private, $"memory-{index}", "test", 0.9, DateTimeOffset.UtcNow, MemoryOrigin.Lived))
             .ToArray();
 
         var prompt = MemoryContextBuilder.Build("Что ты помнишь?", memories);
@@ -149,5 +149,29 @@ public sealed class MemoryContextBuilderTests
         Assert.Contains("NOT verified", prompt);
         Assert.Contains("confidence=", prompt);
         Assert.Contains("Привет", prompt);
+    }
+
+    [Fact]
+    public void MemoryOrigin_accepts_only_known_values()
+    {
+        Assert.True(MemoryOrigin.IsValid(MemoryOrigin.Lived));
+        Assert.True(MemoryOrigin.IsValid(MemoryOrigin.Imported));
+        Assert.True(MemoryOrigin.IsValid(MemoryOrigin.System));
+        Assert.True(MemoryOrigin.IsValid(MemoryOrigin.Development));
+        Assert.False(MemoryOrigin.IsValid("test-fixture"));
+        Assert.False(MemoryOrigin.IsValid(""));
+        Assert.False(MemoryOrigin.IsValid(null));
+        Assert.Equal(MemoryOrigin.Lived, MemoryOrigin.Default);
+        Assert.Throws<ArgumentException>(() => MemoryOrigin.Normalize("nope"));
+    }
+
+    [Fact]
+    public void ScopedMemory_rejects_bad_origin()
+    {
+        var memory = new ScopedMemory();
+        Assert.Throws<ArgumentException>(() =>
+            memory.Add(Guid.NewGuid(), MemoryScope.Private, "x", "test", 0.5, "nope"));
+        var item = memory.Add(Guid.NewGuid(), MemoryScope.Private, "x", "test", 0.5, MemoryOrigin.Imported);
+        Assert.Equal(MemoryOrigin.Imported, item.Origin);
     }
 }

@@ -70,7 +70,8 @@ public sealed class DailyReviewService(
             $"[Итог дня {dayStart:dd.MM.yyyy}] {summary}",
             sourceKey,
             0.7, // reviewed-but-inferred: never full confidence (§49)
-            cancellationToken);
+            cancellationToken,
+            origin: MemoryOrigin.System);
 
         logger.LogInformation("Daily review stored for {Owner} ({Items} items).", ownerId, day.Count);
         return true;

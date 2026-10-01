@@ -75,3 +75,8 @@ TOLIK handles sensitive personal data:
 4. Session credentials issued
 5. Revocation: `POST /auth/session/{id}/revoke`, `POST /auth/devices/{id}/revoke`
    (owner-scoped, audited; revoked devices fail all future authentication)
+
+## Dev-only secrets risk acceptance (01.10.2026)
+- `src/TOLIK.Core.Host/appsettings.json` is tracked and holds dev-only local credentials (present since 17ec966), accepted for local dev only.
+- MUST rotate PG password + bootstrap code and move to `.env`/user-secrets before any VPS deploy, repo sharing, or remote access.
+- `.env` stays untracked/gitignored.

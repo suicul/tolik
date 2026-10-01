@@ -108,6 +108,7 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
         memory.Property(x => x.Scope).HasMaxLength(32).IsRequired();
         memory.Property(x => x.Content).HasMaxLength(8192).IsRequired();
         memory.Property(x => x.Source).HasMaxLength(256).IsRequired();
+        memory.Property(x => x.Origin).HasMaxLength(32).IsRequired().HasDefaultValue("lived");
         memory.HasIndex(x => new { x.OwnerId, x.Scope, x.CreatedAt });
         var rule = modelBuilder.Entity<TolikLearnedRuleEntity>();
         rule.ToTable("tolik_learned_rules");

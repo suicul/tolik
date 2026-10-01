@@ -977,7 +977,7 @@ app.MapPost("/memory", async (MemoryRequest request, HttpContext context, Identi
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
     if (principal is null) return AuthenticationRequired(context);
-    try { var item = memory.Add(principal.UserId, request.Scope, request.Content ?? string.Empty, request.Source ?? "user", request.Confidence); await using var db = await factory.CreateDbContextAsync(cancellationToken); db.Memories.Add(new TolikMemoryEntity { Id = item.Id, OwnerId = item.OwnerId, Scope = item.Scope.ToString(), Content = item.Content, Source = item.Source, Confidence = item.Confidence, CreatedAt = item.CreatedAt }); await db.SaveChangesAsync(cancellationToken); return Results.Ok(item); }
+    try { var item = memory.Add(principal.UserId, request.Scope, request.Content ?? string.Empty, request.Source ?? "user", request.Confidence, request.Origin ?? MemoryOrigin.Lived); await using var db = await factory.CreateDbContextAsync(cancellationToken); db.Memories.Add(new TolikMemoryEntity { Id = item.Id, OwnerId = item.OwnerId, Scope = item.Scope.ToString(), Content = item.Content, Source = item.Source, Confidence = item.Confidence, CreatedAt = item.CreatedAt, Origin = item.Origin }); await db.SaveChangesAsync(cancellationToken); return Results.Ok(item); }
     catch (ArgumentException) { return Results.BadRequest(new { error = "invalid_memory" }); }
 });
 app.MapGet("/memory/search", async (string q, HttpContext context, IdentityService identity, ScopedMemory memory, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
@@ -1857,7 +1857,7 @@ public sealed record BootstrapChallengeRequest(string? BootstrapCode);
 public sealed record BootstrapRequest(string? BootstrapCode, string InstallationId, string PublicKey, string? Challenge, string? Signature);
 public sealed record FileToolRequest(string Path);
 public sealed record PlanRequest(string? Request, int MaxSteps = 8, int BudgetSeconds = 300, string[]? Steps = null, bool AutoPlan = false);
-public sealed record MemoryRequest(MemoryScope Scope, string? Content, string? Source, double Confidence = 1);
+public sealed record MemoryRequest(MemoryScope Scope, string? Content, string? Source, double Confidence = 1, string? Origin = null);
 public sealed record PersonRequest(string? Name, string? Relationship, MemoryScope Scope = MemoryScope.Shared);
 public sealed record HumorRequest(MemoryScope Scope, string? Content, string? Source);
 public sealed record PersonalityRequest(string? Tone, string? Style, bool UseHumor = true);
