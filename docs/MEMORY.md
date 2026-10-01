@@ -53,14 +53,20 @@ Every memory item tracks:
 - source — where it came from (conversation, event, explicit)
 - confidence — reliability score (0.0–1.0)
 - created_at — timestamp
-- xpires_at — optional (ephemeral memories)
 - scope — who can see it
-- 	ype — category (fact, preference, experience)
+- type — category (fact, preference, experience)
+
+(`expires_at` for ephemeral memories is declared but NOT implemented —
+see retention below.)
 
 ## Storage
-- Primary: PostgreSQL (JSONB, full-text, vector)
-- No separate vector DB until pgvector needed
-- Migration-based schema management
+- Primary: PostgreSQL, plain relational tables (no JSONB columns, no
+  full-text index, no vector extension as of baseline).
+- Retrieval is exact-substring (`ILIKE %q%`) + exact `Source` match,
+  ordered by confidence/created. No semantic search yet (see Track 4).
+- Migration-based schema management.
+- Speaker voice profiles live here too: 192-float embedding JSON,
+  source `speaker.profile`, always `Private`.
 
 ## Inspect / delete (§50)
 

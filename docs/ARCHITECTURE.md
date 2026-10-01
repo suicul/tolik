@@ -51,16 +51,18 @@
 | src/TOLIK.Infrastructure/Authorization/AuthorizationPolicy.cs | Authorization |
 | clients/TOLIK.Cli | CLI client |
 
-## Database Schema
+## Database Schema (actual table names)
 
-- 	olik_users — Users
-- 	olik_sessions — Sessions
-- 	olik_devices — Devices
-- 	olik_tasks — Tasks
-- 	olik_memories — Memories
-- 	olik_learned_rules — Learned rules
-- 	olik_audit_events — Audit trail
-- 	olik_system_records — System state
+- 	tolik_users — Users
+- 	tolik_sessions — Sessions (+token hashes, sliding expiry)
+- 	tolik_devices — Devices (+P-256 keys, MFA secrets)
+- 	tolik_bootstraps / tolik_device_challenges — enrollment flow
+- 	tolik_tasks — Tasks
+- 	tolik_memories — Memories (+speaker profiles, compaction marks)
+- 	tolik_learned_rules — Learned rules
+- 	tolik_proactive — Reminders/notifications
+- 	audit_events — Audit trail (hash-chained, append-only trigger)
+- 	system_records — System state (reserved, unused by code yet)
 
 ## Configuration
 
@@ -69,11 +71,11 @@ All config via environment variables (.env) or appsettings.json.
 ### Environment Variables
 | Variable | Default | Description |
 |----------|---------|-------------|
-| TOLIK_OFFLINE_MODE | false | Use Ollama instead of cloud |
-| TOLIK_MODEL_OFFLINE__MODEL | qwen2.5:3b-instruct | Offline LLM model (chat/simple) |
+| TOLIK_OFFLINE_MODE | true (compose) | Offline-first; false = cloud-first with offline fallback |
+| TOLIK_MODEL_OFFLINE__MODEL | qwen2.5:3b-instruct | Offline LLM model (fallback) |
 | TOLIK_MODEL_OFFLINE__ENDPOINT | http://host.docker.internal:11434 (docker) | Ollama endpoint |
-| TOLIK_MODEL_OFFLINE_SIMPLE__MODEL | qwen2.5:3b-instruct | Fast model for simple chat/voice (num_predict capped at 250) |
-| TOLIK_MODEL_OFFLINE_CODING__MODEL | qwen3:35b-coding | Heavy model for coding tasks (uncapped) |
+| TOLIK_MODEL_OFFLINE_SIMPLE__MODEL | qwen3:4b | Fast model for simple chat/voice (think:false, num_predict 250, num_ctx 8192) |
+| TOLIK_MODEL_OFFLINE_CODING__MODEL | qwen3.6:35b-coding | Heavy model for coding tasks (uncapped) |
 | TOLIK_BOOTSTRAP_CODE | | Bootstrap code for first-time setup |
 | TOLIK_POSTGRES_CONNECTION_STRING | | PostgreSQL connection string |
 | TOLIK_ALLOWED_ROOTS | | Agent filesystem allowlist (path isolation) |

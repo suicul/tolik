@@ -18,14 +18,18 @@ TOLIK handles sensitive personal data:
 - Challenge-response for revocation
 - Speaker verification (CampPlus embedding, threshold 0.45): `POST /voice/speaker/enroll`
   stores a Private voice profile, `POST /voice/speaker/verify` returns confidence.
-  Voice confidence alone never authorizes — enforcement (low-confidence
-  restrictions in voice turns) is the next step, not yet wired.
+  Voice confidence alone never authorizes. Enforcement wired in `/voice/turn`:
+  unverified speakers get a guest-mode instruction (no private items, no
+  irreversible acts) + `voice.user.unverified` provenance; tool-level gating
+  beyond that is future work.
 
 ### 2. Authorization
 - Per-tool capability system
 - READ_ONLY / LOW_RISK / MODIFY / DESTRUCTIVE / CRITICAL
 - Context-aware authorization
 - Audit trail for all decisions
+- Normative matrix: `docs/authorization.md` (categories, escalation rules,
+  confirmation binding, MFA categories)
 
 ### 3. Tool Security
 - Explicit capability list per tool
@@ -41,7 +45,7 @@ TOLIK handles sensitive personal data:
 - Credential files excluded from version control
 - Authorization headers never logged (401 diagnostics record only path + header presence)
 
-### 6. Local dev convenience (single-user machines only)
+### 5. Local dev convenience (single-user machines only)
 - `TOLIK_DEV_AUTO_TOKEN=true` allows the same-machine WebUI to mint an owner
   session via `GET /auth/local-token` (explicit opt-in, default off).
 - Endpoint answers only loopback/RFC1918 callers and 404s otherwise
@@ -69,4 +73,5 @@ TOLIK handles sensitive personal data:
 2. User provides bootstrap code
 3. Device registered with identity key
 4. Session credentials issued
-5. Future: revocation capability
+5. Revocation: `POST /auth/session/{id}/revoke`, `POST /auth/devices/{id}/revoke`
+   (owner-scoped, audited; revoked devices fail all future authentication)
