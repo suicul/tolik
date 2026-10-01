@@ -1,0 +1,149 @@
+name: tolik
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tolik
+      POSTGRES_USER: tolik
+      POSTGRES_PASSWORD: ${TOLIK_POSTGRES_PASSWORD:?Set TOLIK_POSTGRES_PASSWORD in the process environment}
+    ports:
+      - "127.0.0.1:${TOLIK_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - tolik_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=tolik --dbname=tolik"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  # TOLIK Voice Service — STT + TTS (§41, §44)
+  voice:
+    build:
+      context: .
+      dockerfile: services/voice/Dockerfile
+    restart: unless-stopped
+    profiles: ["vps"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TOLIK_VOICE_PORT: 9660
+      TOLIK_STT_ENGINE: faster-whisper
+      TOLIK_WHISPER_MODEL: base
+      TOLIK_STT_DEVICE: cpu
+      TOLIK_COSYVOICE_ROOT: ${TOLIK_COSYVOICE_ROOT:-}
+      TOLIK_TTS_ENGINE: ${TOLIK_TTS_ENGINE:-auto}
+      TOLIK_XTTS_ENDPOINT: ${TOLIK_XTTS_ENDPOINT:-}
+    ports:
+      - "127.0.0.1:9660:9660"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9660/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # TOLIK Core — VPS profile (§55). Start with:
+  #   docker compose --profile vps up -d core
+  core:
+    build:
+      context: .
+      dockerfile: src/TOLIK.Core.Host/Dockerfile
+    restart: unless-stopped
+    profiles: ["vps"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      voice:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=tolik;Username=tolik;Password=${TOLIK_POSTGRES_PASSWORD:?Set TOLIK_POSTGRES_PASSWORD}"
+      TOLIK_BOOTSTRAP_CODE: ${TOLIK_BOOTSTRAP_CODE:-}
+      TOLIK_DEV_AUTO_TOKEN: ${TOLIK_DEV_AUTO_TOKEN:-false}
+      TOLIK_ALLOWED_ROOTS: ${TOLIK_ALLOWED_ROOTS:-}
+      TOLIK_OFFLINE_MODE: ${TOLIK_OFFLINE_MODE:-true}
+      TOLIK_SESSION_LIFETIME_HOURS: ${TOLIK_SESSION_LIFETIME_HOURS:-168}
+      TOLIK_STT__Endpoint: ${TOLIK_STT_ENDPOINT:-http://voice:9660}
+      TOLIK_VOICE__COSYVOICE_ENDPOINT: ${TOLIK_COSYVOICE_ENDPOINT:-http://voice:9660}
+      TOLIK_MODEL_OFFLINE__ENDPOINT: ${TOLIK_MODEL_OFFLINE_ENDPOINT:-http://host.docker.internal:11434}
+      TOLIK_MODEL_OFFLINE__MODEL: ${TOLIK_MODEL_OFFLINE_MODEL:-qwen2.5:3b-instruct}
+      TOLIK_MODEL_OFFLINE__PROVIDER: ${TOLIK_MODEL_OFFLINE_PROVIDER:-ollama}
+      TOLIK_MODEL_OFFLINE_SIMPLE__ENDPOINT: ${TOLIK_MODEL_OFFLINE_ENDPOINT:-http://host.docker.internal:11434}
+      TOLIK_MODEL_OFFLINE_SIMPLE__MODEL: ${TOLIK_MODEL_OFFLINE_SIMPLE__MODEL:-qwen3:4b}
+      TOLIK_MODEL_OFFLINE_CODING__ENDPOINT: ${TOLIK_MODEL_OFFLINE_ENDPOINT:-http://host.docker.internal:11434}
+      TOLIK_MODEL_OFFLINE_CODING__MODEL: ${TOLIK_MODEL_OFFLINE_CODING_MODEL:-qwen3.6:35b-coding}
+      # Cloud routes (OpenAI-compatible). Empty by default = unconfigured = offline fallback.
+      TOLIK_MODELS_SIMPLE__PROVIDER: ${TOLIK_MODELS_SIMPLE__PROVIDER:-}
+      TOLIK_MODELS_SIMPLE__MODEL: ${TOLIK_MODELS_SIMPLE__MODEL:-}
+      TOLIK_MODELS_SIMPLE__ENDPOINT: ${TOLIK_MODELS_SIMPLE__ENDPOINT:-}
+      TOLIK_MODELS_SIMPLE__API_KEY: ${TOLIK_MODELS_SIMPLE__API_KEY:-}
+      TOLIK_MODELS_REASONING__PROVIDER: ${TOLIK_MODELS_REASONING__PROVIDER:-}
+      TOLIK_MODELS_REASONING__MODEL: ${TOLIK_MODELS_REASONING__MODEL:-}
+      TOLIK_MODELS_REASONING__ENDPOINT: ${TOLIK_MODELS_REASONING__ENDPOINT:-}
+      TOLIK_MODELS_REASONING__API_KEY: ${TOLIK_MODELS_REASONING__API_KEY:-}
+      TOLIK_MODELS_CODING__PROVIDER: ${TOLIK_MODELS_CODING__PROVIDER:-}
+      TOLIK_MODELS_CODING__MODEL: ${TOLIK_MODELS_CODING__MODEL:-}
+      TOLIK_MODELS_CODING__ENDPOINT: ${TOLIK_MODELS_CODING__ENDPOINT:-}
+      TOLIK_MODELS_CODING__API_KEY: ${TOLIK_MODELS_CODING__API_KEY:-}
+      TOLIK_MODELS_VISION__PROVIDER: ${TOLIK_MODELS_VISION__PROVIDER:-}
+      TOLIK_MODELS_VISION__MODEL: ${TOLIK_MODELS_VISION__MODEL:-}
+      TOLIK_MODELS_VISION__ENDPOINT: ${TOLIK_MODELS_VISION__ENDPOINT:-}
+      TOLIK_MODELS_VISION__API_KEY: ${TOLIK_MODELS_VISION__API_KEY:-}
+    ports:
+      - "127.0.0.1:${TOLIK_CORE_PORT:-5080}:5080"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # apt-free probe: the aspnet image has bash but no wget/curl (and the
+      # sandbox network filters Ubuntu archives, so apt-get is not an option).
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/5080; printf \"GET /health/ready HTTP/1.0\\r\\nHost: 127.0.0.1\\r\\n\\r\\n\" >&3; IFS= read -r statusline <&3; [[ \"$$statusline\" == *200* ]]'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+
+  # TOLIK XTTS — local neural TTS sidecar (GPU, opt-in). Start with:
+  #   docker compose --profile vps --profile gpu up -d --build xtts
+  # Voice service routes here when TOLIK_XTTS_ENDPOINT is set; otherwise the
+  # regular edge-tts/offline chain applies. Never required for Core to run.
+  xtts:
+    build:
+      context: .
+      dockerfile: services/xtts/Dockerfile
+    restart: unless-stopped
+    profiles: ["gpu"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      TOLIK_XTTS_PORT: 9670
+      TOLIK_XTTS_SPEAKER: /data/prompt.wav
+      HF_HOME: /data/hf-cache
+    ports:
+      - "127.0.0.1:${TOLIK_XTTS_PORT:-9670}:9670"
+    volumes:
+      - tolik_xtts_data:/data
+      - ./artifacts/cosyvoice-dataset/prompt_ordis.wav:/data/prompt.wav:ro
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9670/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 180s
+
+volumes:
+  tolik_postgres_data:
+  tolik_xtts_data:

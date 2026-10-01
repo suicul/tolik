@@ -1,0 +1,23 @@
+# Docker build context hygiene for TOLIK Core image.
+**/bin/
+**/obj/
+**/.git/
+**/.vs/
+**/TestDbConnection/
+backups/
+core.log
+.env
+.env.*
+!.env.example
+.slim/
+.omo/
+.opencode/
+voice_reference/
+datasets/
+audio/
+services/voice/  # Voice service has its own Dockerfile
+docs/
+scripts/
+clients/
+tests/
+*.md

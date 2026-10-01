@@ -1,0 +1,6 @@
+// This partial class enables WebApplicationFactory<Program> for integration testing
+namespace TOLIK.Core.Host;
+
+public partial class Program
+{
+}

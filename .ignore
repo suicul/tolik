@@ -1,0 +1,4 @@
+bin/
+obj/
+!.slim/deepwork/
+!.slim/deepwork/**

@@ -1,0 +1,26 @@
+bin/
+obj/
+node_modules/
+.env
+backups/
+core.log
+dist/
+# Agent session residue (may contain pasted secrets, DB dumps, bulk logs)
+.omo/
+# Windows FS junk that landed as a literal directory name
+\%SystemDrive\%/
+/%SystemDrive%/
+.slim/deepwork/
+.opencode/loop-history/
+# Local-only generated data (never commit: wavs, transcripts, binaries, refs)
+artifacts/
+datasets/
+voice_reference/
+*.pt
+*.onnx
+# Vendored upstream (CosyVoice3 + weights, ~GBs, third-party)
+CosyVoice3/
+# Root-level test samples and logs
+*.log
+*.wav
+*.mp3

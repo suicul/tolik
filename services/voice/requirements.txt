@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+faster-whisper==1.2.1
+edge-tts==6.1.9
+pyotp==2.9.0
+qrcode==7.4.2
+pillow==10.4.0
+python-multipart==0.0.9
+requests==2.32.3
+onnxruntime==1.30.0
+kaldi-native-fbank==1.22.3
+av==18.1.0

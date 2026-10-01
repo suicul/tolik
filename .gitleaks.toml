@@ -1,0 +1,10 @@
+title = "TOLIK repository secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated .NET build outputs are excluded from repository scanning."
+paths = [
+  '''(^|/)(bin|obj)(/|$)''',
+]

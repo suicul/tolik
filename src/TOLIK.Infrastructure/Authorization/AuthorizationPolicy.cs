@@ -1,0 +1,123 @@
+using System.Text.RegularExpressions;
+using TOLIK.Contracts;
+using TOLIK.Infrastructure.Identity;
+
+namespace TOLIK.Infrastructure.Authorization;
+
+public enum AuthorizationDecision
+{
+    Allow,
+    Deny,
+    ConfirmationRequired
+}
+
+/// <summary>Ported from interface/contracts.js ESCALATION_RULES: capability + resource pattern → escalated risk.</summary>
+public sealed record EscalationRule(
+    string Name,
+    AgentCapability Capability,
+    Regex Pattern,
+    ToolRiskLevel EscalatedRisk,
+    bool RequireConfirmation,
+    string Reason);
+
+/// <summary>
+/// Deterministic risk escalation (AGENTS.md §11, threat T13): certain resources and
+/// capabilities carry a higher effective risk than their declared one. Ported from
+/// the browser protocol reference (interface/contracts.js), stage 1 of Option A
+/// (docs/INTERFACE-ANALYSIS.md).
+/// </summary>
+public static class ToolEscalation
+{
+    public static readonly EscalationRule[] Rules =
+    [
+        new EscalationRule(
+            "security-configuration",
+            AgentCapability.WriteFile,
+            new Regex(@"(\.git[\\/]hooks([\\/].*)?$|nuget\.config$|Directory\.Build\.(props|targets)$|\.tolik([\\/].*)?$|policy\.json$|CODEOWNERS$)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            ToolRiskLevel.Destructive,
+            RequireConfirmation: true,
+            Reason: "modifying build, pipeline or authorization policy configuration"),
+        new EscalationRule(
+            "security-critical-source",
+            AgentCapability.WriteFile,
+            new Regex(@"(ProtocolContracts\.cs|CoreRuntime\.cs|AgentRuntime\.cs|AuthorizationEngine\.cs|AuthorizationPolicy\.cs|ToolEscalation\.cs|SecurityLogging\.cs|AuditWriter\.cs|DeviceChallengeVerifier\.cs)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            ToolRiskLevel.Critical,
+            RequireConfirmation: true,
+            Reason: "modifying TOLIK's own security-critical source can bypass authorization (T13)"),
+        new EscalationRule(
+            "codex-autonomy",
+            AgentCapability.RunCodex,
+            new Regex(".", RegexOptions.Compiled),
+            ToolRiskLevel.Modify,
+            RequireConfirmation: true,
+            Reason: "a coding agent can modify the working tree without review of each edit"),
+    ];
+
+    /// <summary>Returns the effective risk and the first matching rule (declared risk is the floor).</summary>
+    public static (ToolRiskLevel EffectiveRisk, EscalationRule? Applied) Evaluate(AgentCapability capability, string resource)
+    {
+        var effective = ToolRiskLevel.ReadOnly;
+        foreach (var rule in Rules)
+        {
+            if (rule.Capability != capability) continue;
+            if (!rule.Pattern.IsMatch(resource)) continue;
+            if (rule.EscalatedRisk > effective) effective = rule.EscalatedRisk;
+            return (effective, rule);
+        }
+        return (effective, null);
+    }
+}
+
+public sealed record AuthorizationRequest(
+    SessionPrincipal? Principal,
+    AgentCapability Capability,
+    ToolRiskLevel Risk,
+    string Resource,
+    string AllowedResource,
+    bool ConfirmationValid,
+    bool PolicyAvailable = true,
+    bool SessionValid = true,
+    bool DeviceValid = true,
+    bool AgentAuthorized = true,
+    bool TaskScopeValid = true,
+    bool CapabilityGranted = true,
+    DateTimeOffset? AuthorizationExpiresAt = null,
+    DateTimeOffset? ConfirmationExpiresAt = null,
+    bool ConfirmationConsumed = false,
+    bool MfaValid = false,
+    DateTimeOffset? EvaluatedAt = null);
+
+public static class AuthorizationPolicy
+{
+    public static AuthorizationDecision Evaluate(AuthorizationRequest request)
+    {
+        var now = request.EvaluatedAt ?? DateTimeOffset.UtcNow;
+        if (!request.PolicyAvailable || request.Principal is null || !request.SessionValid || !request.DeviceValid ||
+            !request.AgentAuthorized || !request.TaskScopeValid || !request.CapabilityGranted ||
+            string.IsNullOrWhiteSpace(request.Principal.Role) ||
+            !string.Equals(request.Principal.Role, "Owner", StringComparison.Ordinal) &&
+            !string.Equals(request.Principal.Role, "AuthorizedUser", StringComparison.Ordinal) ||
+            request.Risk == ToolRiskLevel.Critical && !request.MfaValid ||
+            string.IsNullOrWhiteSpace(request.Resource) || string.IsNullOrWhiteSpace(request.AllowedResource) ||
+            !string.Equals(request.Resource, request.AllowedResource, StringComparison.Ordinal) ||
+            request.AuthorizationExpiresAt is { } authorizationExpiry && authorizationExpiry <= now ||
+            request.ConfirmationConsumed ||
+            request.ConfirmationExpiresAt is { } confirmationExpiry && confirmationExpiry <= now)
+            return AuthorizationDecision.Deny;
+
+        // Effective risk = max(declared, escalated): security-critical resources and
+        // autonomous coding agents escalate beyond their declared level (T13).
+        var effectiveRisk = request.Risk;
+        var (escalatedRisk, _) = ToolEscalation.Evaluate(request.Capability, request.Resource);
+        if (escalatedRisk > effectiveRisk) effectiveRisk = escalatedRisk;
+
+        return effectiveRisk switch
+        {
+            ToolRiskLevel.ReadOnly or ToolRiskLevel.LowRisk => AuthorizationDecision.Allow,
+            ToolRiskLevel.Modify => request.ConfirmationValid ? AuthorizationDecision.Allow : AuthorizationDecision.ConfirmationRequired,
+            ToolRiskLevel.Destructive => request.ConfirmationValid ? AuthorizationDecision.Allow : AuthorizationDecision.ConfirmationRequired,
+            ToolRiskLevel.Critical => request.ConfirmationValid && request.MfaValid ? AuthorizationDecision.Allow : AuthorizationDecision.Deny,
+            _ => AuthorizationDecision.Deny
+        };
+    }
+}

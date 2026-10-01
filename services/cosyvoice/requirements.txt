@@ -1,0 +1,4 @@
+# Pin the actual CosyVoice runtime after the user's trained checkpoint/API is selected.
+# Model weights are intentionally mounted at runtime and never downloaded by this image.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0

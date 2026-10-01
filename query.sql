@@ -1,0 +1,1 @@
+SELECT "Id", "InstallationId", "TotpSecret" FROM tolik_devices WHERE "Revoked" = false;
