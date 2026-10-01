@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -87,10 +88,25 @@ public enum ProtocolValidationErrorCode
     UnknownCapability,
     UnknownRiskLevel,
     UnknownCommandOutcome,
-    UnknownEventKind
+    UnknownEventKind,
+    ForbiddenArgumentKey
 }
 
 public sealed record ProtocolValidationError(ProtocolValidationErrorCode Code, string Field);
+
+/// <summary>
+/// Denied <see cref="AgentCommand.Arguments"/> keys that would smuggle a generic
+/// command/shell surface through the explicit-capability protocol.
+/// Case-insensitive; shared by contract validation and transport authorization
+/// (defense in depth).
+/// </summary>
+public static class CommandArgumentPolicy
+{
+    public static readonly FrozenSet<string> DeniedKeys =
+        FrozenSet.ToFrozenSet<string>(["command", "shell", "exec", "argv", "script", "eval"], StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsDenied(string key) => key is not null && DeniedKeys.Contains(key);
+}
 
 public sealed record ProtocolValidationResult(ImmutableArray<ProtocolValidationError> Errors)
 {
@@ -169,6 +185,16 @@ public sealed record CommandRequest(
             if (Command.Arguments is null)
             {
                 errors.Add(new ProtocolValidationError(ProtocolValidationErrorCode.MalformedJson, "payload.command.arguments"));
+            }
+            else
+            {
+                foreach (var key in Command.Arguments.Keys)
+                {
+                    if (CommandArgumentPolicy.IsDenied(key))
+                    {
+                        errors.Add(new ProtocolValidationError(ProtocolValidationErrorCode.ForbiddenArgumentKey, $"payload.command.arguments.{key}"));
+                    }
+                }
             }
         }
 

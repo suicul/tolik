@@ -19,6 +19,17 @@ public static class AgentTransportAuthorization
             return AuthorizationDecision.Deny;
         if (!request.Registration.AdvertisedCapabilities.Contains(request.Command.Capability))
             return AuthorizationDecision.Deny;
+        // Defense in depth: same denylist as CommandRequest.Validate
+        // (ProtocolValidationErrorCode.ForbiddenArgumentKey). This layer can only
+        // signal Deny — see deviation note in the task report.
+        if (request.Command.Arguments is not null)
+        {
+            foreach (var key in request.Command.Arguments.Keys)
+            {
+                if (CommandArgumentPolicy.IsDenied(key))
+                    return AuthorizationDecision.Deny;
+            }
+        }
         return AuthorizationPolicy.Evaluate(new AuthorizationRequest(
             request.Principal,
             request.Command.Capability,

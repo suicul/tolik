@@ -63,3 +63,4 @@ README описывает два UI-режима (Chat + Cephalon-глаз) — 
 - [ ] LOCKED state в Core.Host (2 известные расхождения из README синхронизировать)
 - [ ] Envelope-валидация: unknown fields → 400, strict canonical JSON
 - [ ] Roles: Guest/TrustedGuest/Family/Owner + risk ceilings в AuthorizationPolicy
+- [x] Запрет command-surface (`FORBIDDEN_SURFACE_KEYS`) — IMPLEMENTED: C# enforcement via CommandArgumentPolicy denylist (ProtocolContracts.Validate + AgentTransportAuthorization.Evaluate Deny), 2 tests, 01.10.2026.

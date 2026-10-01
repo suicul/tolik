@@ -188,6 +188,49 @@ public sealed class InvalidEnvelope
     }
 
     [Fact]
+    public void Given_a_command_with_a_forbidden_argument_key_when_validated_then_a_deterministic_validation_error_is_returned()
+    {
+        // Given
+        var command = CreateValidEnvelope().Payload.Command with
+        {
+            Arguments = ImmutableDictionary<string, string>.Empty.Add("Shell", "rm -rf /")
+        };
+        var envelope = CreateValidEnvelope() with
+        {
+            Payload = CreateValidEnvelope().Payload with { Command = command }
+        };
+
+        // When
+        var validation = envelope.Validate();
+
+        // Then
+        Assert.False(validation.IsValid);
+        Assert.Contains(validation.Errors, error => error.Code == ProtocolValidationErrorCode.ForbiddenArgumentKey);
+    }
+
+    [Fact]
+    public void Given_a_command_with_benign_argument_keys_when_validated_then_it_passes()
+    {
+        // Given
+        var envelope = CreateValidEnvelope() with
+        {
+            Payload = CreateValidEnvelope().Payload with
+            {
+                Command = CreateValidEnvelope().Payload.Command with
+                {
+                    Arguments = ImmutableDictionary<string, string>.Empty.Add("projectId", "sample-project")
+                }
+            }
+        };
+
+        // When
+        var validation = envelope.Validate();
+
+        // Then
+        Assert.True(validation.IsValid);
+    }
+
+    [Fact]
     public void Given_an_undefined_identity_role_when_validated_then_a_deterministic_validation_error_is_returned()
     {
         // Given
