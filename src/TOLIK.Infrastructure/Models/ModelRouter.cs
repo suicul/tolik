@@ -175,11 +175,15 @@ public sealed class ModelRouter(IConfiguration configuration)
     /// falling back to the offline model when the cloud route is unconfigured.
     /// Exception: Simple (chat/voice latency path) prefers the local model first —
     /// chatter stays on the home GPU even when cloud is enabled for the rest.
+    /// A remembered per-user preference (ask-policy, docs/ROADMAP.md model policy)
+    /// overrides the coding-kind default: Local → offline-first, Cloud → cloud-first.
     /// Never returns a route when neither is available.
     /// </summary>
-    public ModelRoute? ResolveWithFallback(ModelTaskKind kind)
+    public ModelRoute? ResolveWithFallback(ModelTaskKind kind, ModelRoutingPreference? preference = null)
     {
         if (kind == ModelTaskKind.Simple)
+            return ResolveOffline(kind) ?? Resolve(kind);
+        if (preference is ModelRoutingPreference.Local)
             return ResolveOffline(kind) ?? Resolve(kind);
         var primary = Resolve(kind);
         if (primary is not null) return primary;

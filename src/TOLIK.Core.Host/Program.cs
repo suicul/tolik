@@ -1263,6 +1263,39 @@ app.MapGet("/status/voice", async (HttpContext context, IdentityService identity
     var sttHealth = await stt.CheckHealthAsync(cancellationToken);
     return Results.Ok(new { runtimeMode = mode.ToString(), changedAt, reason, tts = ttsHealth.Status, ttsAvailable = ttsHealth.Available, stt = sttHealth.Status, sttAvailable = sttHealth.Available });
 });
+// Remembered model-routing preference (ask-policy, docs/ROADMAP.md model policy):
+// the owner answers the cloud-vs-local ask for coding; the choice is remembered
+// per user and applied to future coding-route resolution. In-memory per process.
+app.MapPost("/models/preference", async (ModelPreferenceRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Models.ModelPreferenceStore preferences, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var mode = request.Mode?.Trim();
+    TOLIK.Infrastructure.Models.ModelRoutingPreference? preference = mode?.ToLowerInvariant() switch
+    {
+        "cloud" => TOLIK.Infrastructure.Models.ModelRoutingPreference.Cloud,
+        "local" => TOLIK.Infrastructure.Models.ModelRoutingPreference.Local,
+        _ => null
+    };
+    if (preference is null) return Results.BadRequest(new { error = "invalid_mode" });
+    preferences.Set(principal.UserId, preference.Value);
+    return Results.Ok(new { preference = mode!.ToLowerInvariant(), remembered = true });
+});
+app.MapGet("/models/preference", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Models.ModelPreferenceStore preferences, ModelRouter router, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var remembered = preferences.Get(principal.UserId);
+    return Results.Ok(new { preference = remembered?.ToString()?.ToLowerInvariant(), offlineMode = router.IsOfflineMode });
+});
+app.MapDelete("/models/preference", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Models.ModelPreferenceStore preferences, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    preferences.Clear(principal.UserId);
+    return Results.Ok(new { preference = (string?)null, remembered = false });
+});
+
 app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentityService identity, ModelRouter router, ModelCompletionClient completion, ScopedMemory memory, DurableMemoryStore durableMemory, FileToolService files, LearnedRuleStore rules, PersonalContextStore personalStore, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
@@ -1403,7 +1436,8 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
         finally { foreach (var process in processes) process.Dispose(); }
     }
     var routeKind = TOLIK.Infrastructure.Models.ChatModelSelector.Pick(action);
-    var route = router.ResolveWithFallback(routeKind);
+    // Remembered ask-policy preference (per user) overrides the coding-kind default.
+    var route = router.ResolveWithFallback(routeKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
     if (route is null) return Results.Problem("No model route configured.", statusCode: 503);
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ: {request.Message}", "chat.user", 1, cancellationToken);
     var memories = await durableMemory.SearchAsync(principal.UserId, request.Message, MemoryContextBuilder.MaxItems, cancellationToken);
@@ -1539,7 +1573,8 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     }
 
     var voiceKind = TOLIK.Infrastructure.Models.ChatModelSelector.Pick(transcription.Text);
-    var route = router.ResolveWithFallback(voiceKind);
+    // Remembered ask-policy preference (per user) overrides the coding-kind default.
+    var route = router.ResolveWithFallback(voiceKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
     if (route is null) return Results.Problem("No model route configured.", statusCode: 503);
     string raw;
     try
@@ -1930,6 +1965,7 @@ public sealed record MfaEnrollRequest(Guid DeviceId);
 public sealed record MfaVerifyRequest(Guid DeviceId, string Code);
 public sealed record LockRequest(string? Reason);
 public sealed record UnlockRequest(string? UnlockCode);
+public sealed record ModelPreferenceRequest(string? Mode);
 
 public sealed class AgentConnectionRegistry
 {

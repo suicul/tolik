@@ -16,6 +16,8 @@ public static class CoreHostingServices
         // Core security state machine (docs/SECURITY.md §27): in-memory, thread-safe,
         // one LOCKED state per process; consumed by IdentityService + the policy sites.
         services.AddSingleton<TOLIK.Infrastructure.Authorization.CoreSecurityState>();
+        // Remembered per-user model-routing preference (ask-policy): in-memory singleton.
+        services.AddSingleton<TOLIK.Infrastructure.Models.ModelPreferenceStore>();
         return services;
     }
 

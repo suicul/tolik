@@ -9,12 +9,16 @@ by owner decision — not on the active list.
 - Reasoning/Coding: **cloud gpt-6.1-sol** (tooken.club, key in `.env`), offline fallback.
 - Measured: qwen3:4b @100% GPU = ~100 tok/s; default 256k ctx drops it to 77% CPU / ~18 tok/s.
   `OLLAMA_NUM_CTX=8192` is set in user env AND forced per-request by the router.
-- Ask-policy for coding (cloud vs local + remembered preference): TODO.
+- Ask-policy for coding (cloud vs local + remembered preference): DONE 02.10.2026 —
+  `ModelPreferenceStore` (in-memory per-user; restart clears, ask re-presented) +
+  `ResolveWithFallback(kind, preference)` override (Local → offline-first coding,
+  Cloud → cloud-first default, Simple unaffected) + `POST/GET/DELETE /models/preference`
+  (authenticated, per user, invalid mode → 400); wired into /chat + /voice/turn.
 
 ## Track 1 — Assistant core ✅ mostly done
 Done: API/auth/memory/tasks/planner/AutoPlan/partial-failures/audit+read/
 agent transport/Windows agent/CLI/Linux-shim/proactive (reminders+watchdog)/
-MFA/speaker enroll+verify+guest mode/persona/191 tests/green (146 on 30.09 → 191 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state tests, verified green).
+MFA/speaker enroll+verify+guest mode/persona/199 tests/green (146 on 30.09 → 199 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference tests, verified green).
 Next: enroll wife's voice + family role scoping (§18, wife = scoped scenarios).
 
 ## Track 2 — Voice ✅ working, quality loop open
