@@ -14,7 +14,7 @@ by owner decision — not on the active list.
 ## Track 1 — Assistant core ✅ mostly done
 Done: API/auth/memory/tasks/planner/AutoPlan/partial-failures/audit+read/
 agent transport/Windows agent/CLI/Linux-shim/proactive (reminders+watchdog)/
-MFA/speaker enroll+verify+guest mode/persona/181 tests/green (146 on 30.09 → 181 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease tests, verified green).
+MFA/speaker enroll+verify+guest mode/persona/191 tests/green (146 on 30.09 → 191 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state tests, verified green).
 Next: enroll wife's voice + family role scoping (§18, wife = scoped scenarios).
 
 ## Track 2 — Voice ✅ working, quality loop open

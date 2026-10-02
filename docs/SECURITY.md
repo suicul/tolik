@@ -68,6 +68,16 @@ TOLIK handles sensitive personal data:
 - Credential files
 - Local development data
 
+## LOCKED state (§27 Non-Destructive Lockdown, implemented 02.10.2026)
+- `CoreSecurityState` (in-memory, thread-safe, per-process): Operational → LOCKED on a
+  serious security event; response is DETECT → AUDIT → REVOKE → LOCK → NOTIFY, never destruction.
+- Brute-force trip-wire: 10 consecutive failed authentications → LOCKED; success resets; while
+  LOCKED authentication is refused for everyone (fail closed).
+- AuthorizationPolicy `CoreLocked` → first-check deny of ALL operations (no rescue by confirmation/MFA).
+- Owner control: `POST /security/lock` (owner + reason, audited) and `POST /security/unlock`
+  (out-of-band `TOLIK_SECURITY_UNLOCK_CODE`; unset code → unlock impossible; never automatic).
+- `/health` and `/status` expose `locked`; reason + timestamp preserved as evidence.
+
 ## Bootstrap Flow
 1. First run → bootstrap challenge
 2. User provides bootstrap code

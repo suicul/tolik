@@ -13,6 +13,9 @@ public static class CoreHostingServices
     public static IServiceCollection AddTolikCoreInfrastructure(this IServiceCollection services)
     {
         services.AddSingleton(CoreRuntime.Describe());
+        // Core security state machine (docs/SECURITY.md §27): in-memory, thread-safe,
+        // one LOCKED state per process; consumed by IdentityService + the policy sites.
+        services.AddSingleton<TOLIK.Infrastructure.Authorization.CoreSecurityState>();
         return services;
     }
 

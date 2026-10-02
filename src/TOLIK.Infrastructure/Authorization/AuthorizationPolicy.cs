@@ -86,6 +86,7 @@ public sealed record AuthorizationRequest(
     bool ConfirmationConsumed = false,
     bool MfaValid = false,
     bool OfflineMode = false,
+    bool CoreLocked = false,
     DateTimeOffset? EvaluatedAt = null);
 
 public static class AuthorizationPolicy
@@ -94,7 +95,9 @@ public static class AuthorizationPolicy
     {
         var now = request.EvaluatedAt ?? DateTimeOffset.UtcNow;
         var role = TolikRoles.Parse(request.Principal?.Role);
-        if (!request.PolicyAvailable || request.Principal is null || role is null || role is IdentityRole.Guest ||
+        // LOCKED state (§27, ported from interface/policy.js): the first check in the
+        // engine — sensitive operations are denied outright, fail closed.
+        if (request.CoreLocked || !request.PolicyAvailable || request.Principal is null || role is null || role is IdentityRole.Guest ||
             !request.SessionValid || !request.DeviceValid ||
             !request.AgentAuthorized || !request.TaskScopeValid || !request.CapabilityGranted ||
             request.Risk == ToolRiskLevel.Critical && !request.MfaValid ||

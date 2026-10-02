@@ -13,8 +13,27 @@ public sealed record DeviceChallenge(string Token, DateTimeOffset ExpiresAt);
 public sealed record MfaEnrollmentResult(string Secret, string QrCodeUri);
 public sealed record MfaVerificationResult(bool Success, string? Error);
 
-public sealed class IdentityService(IDbContextFactory<TolikDbContext> contextFactory, ILogger<IdentityService> logger)
+public sealed class IdentityService(
+    IDbContextFactory<TolikDbContext> contextFactory,
+    ILogger<IdentityService> logger,
+    TOLIK.Infrastructure.Authorization.CoreSecurityState? securityState = null)
 {
+    /// <summary>
+    /// Brute-force trip-wire (docs/SECURITY.md §17/§27): consecutive failed
+    /// authentications above the threshold trip the core into LOCKED (fail closed);
+    /// a successful authentication resets the counter. In-memory per-process.
+    /// </summary>
+    private int _consecutiveAuthFailures;
+    internal int FailureThreshold { get; set; } = 10;
+
+    private SessionPrincipal? RecordAuthFailure()
+    {
+        if (securityState is null) return null;
+        var failures = Interlocked.Increment(ref _consecutiveAuthFailures);
+        if (failures >= FailureThreshold)
+            securityState.EnterLocked($"brute_force_indicator:{failures}");
+        return null;
+    }
     public async Task EnsureBootstrapAsync(string code, TimeSpan lifetime, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(code)) throw new ArgumentException("Bootstrap code is required.");
@@ -114,13 +133,17 @@ public sealed class IdentityService(IDbContextFactory<TolikDbContext> contextFac
     public async Task<bool> RevokeDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); var device = await db.Devices.SingleOrDefaultAsync(x => x.Id == deviceId, cancellationToken); if (device is null) return false; device.Revoked = true; await db.Sessions.Where(x => x.DeviceId == deviceId && x.RevokedAt == null).ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, DateTimeOffset.UtcNow), cancellationToken); await db.SaveChangesAsync(cancellationToken); return true; }
     public async Task<SessionPrincipal?> AuthenticateAsync(string token, CancellationToken cancellationToken = default)
     {
+        // LOCKED fails closed: authentication is refused for everyone; leaving LOCKED
+        // requires the owner's out-of-band unlock code (POST /security/unlock).
+        if (securityState?.IsLocked == true) return null;
         if (string.IsNullOrWhiteSpace(token)) return null;
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var session = await db.Sessions.SingleOrDefaultAsync(x => x.TokenHash == HashToken(token), cancellationToken);
-        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= DateTimeOffset.UtcNow) return null;
+        if (session is null || session.RevokedAt is not null || session.ExpiresAt <= DateTimeOffset.UtcNow) return RecordAuthFailure();
         var device = await db.Devices.SingleOrDefaultAsync(x => x.Id == session.DeviceId, cancellationToken);
         var user = await db.Users.SingleOrDefaultAsync(x => x.Id == session.UserId, cancellationToken);
-        if (device is null || user is null || device.Revoked || user.Revoked) return null;
+        if (device is null || user is null || device.Revoked || user.Revoked) return RecordAuthFailure();
+        Interlocked.Exchange(ref _consecutiveAuthFailures, 0);
 
         // Sliding expiration (§13): active personal-assistant sessions keep themselves
         // alive; idle sessions still expire. Only pushes forward, never extends a

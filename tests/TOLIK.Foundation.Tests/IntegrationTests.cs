@@ -25,6 +25,9 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = "tolik_test_" + Guid.NewGuid().ToString("N");
 
+    /// <summary>Optional out-of-band unlock code for LOCKED-state tests (TOLIK_SECURITY_UNLOCK_CODE).</summary>
+    public string? UnlockCode { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting flows into WebApplicationBuilder's initial configuration.
@@ -33,6 +36,7 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
         builder.UseSetting("TOLIK_OFFLINE_MODE", "true");
         builder.UseSetting("TOLIK_ALLOWED_ROOTS", "C:\\DEV");
         builder.UseSetting("TOLIK_VOICE:COSYVOICE_ENDPOINT", "http://localhost:8000");
+        if (UnlockCode is not null) builder.UseSetting("TOLIK_SECURITY_UNLOCK_CODE", UnlockCode);
 
         builder.ConfigureServices(services =>
         {

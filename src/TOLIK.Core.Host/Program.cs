@@ -137,7 +137,7 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration) =>
+app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState) =>
 {
     // Voice endpoint is configuration (§55: no baked-in hostnames for VPS moves).
     var voiceBase = configuration["TOLIK_VOICE:COSYVOICE_ENDPOINT"] ?? "http://voice:9660";
@@ -188,7 +188,8 @@ app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context,
         memory = memoryHealthy,
         component = runtime.ComponentName,
         authority = runtime.IsAuthorizationAuthority ? "Core" : "None",
-        execution = runtime.ExecutesOperatingSystemCommands ? "Local" : "DelegatedToAgent"
+        execution = runtime.ExecutesOperatingSystemCommands ? "Local" : "DelegatedToAgent",
+        locked = securityState.IsLocked
     });
 });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
@@ -570,14 +571,54 @@ app.MapPost("/auth/devices/{deviceId:guid}/revoke", async (Guid deviceId, Identi
         : Results.NotFound(new { error = "device_not_found" });
 });
 
-app.MapGet("/status", async (HttpContext context, IdentityService identity, CancellationToken cancellationToken) =>
+app.MapGet("/status", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, CancellationToken cancellationToken) =>
 {
     var token = context.Request.Headers.Authorization.ToString();
     var principal = token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
         ? await identity.AuthenticateAsync(token[7..], cancellationToken)
         : null;
     if (principal is null) return AuthenticationRequired(context);
-    return Results.Ok(new { status = "Healthy", role = principal.Role, userId = principal.UserId, deviceId = principal.DeviceId });
+    return Results.Ok(new { status = securityState.IsLocked ? "LOCKED" : "Healthy", locked = securityState.IsLocked, role = principal.Role, userId = principal.UserId, deviceId = principal.DeviceId });
+});
+
+// LOCKED state control (docs/SECURITY.md §27): manual lock (owner, audited) and
+// out-of-band unlock (owner's unlock code — never automatic, no role unlocks through
+// the regular path). The unlock code comes from TOLIK_SECURITY_UNLOCK_CODE runtime
+// configuration; unset code → unlock impossible (restart with the code instead).
+app.MapPost("/security/lock", async (LockRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "security.lock", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    if (string.IsNullOrWhiteSpace(request.Reason)) return Results.BadRequest(new { error = "reason_required" });
+    var transitioned = securityState.EnterLocked(request.Reason);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "security.lock", transitioned ? "ALLOW" : "NOOP", transitioned ? "core_locked" : "already_locked", cancellationToken);
+    return Results.Ok(new { locked = true, transitioned });
+});
+
+app.MapPost("/security/unlock", async (UnlockRequest request, HttpContext context, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IdentityService identity, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+{
+    var configured = configuration["TOLIK_SECURITY_UNLOCK_CODE"];
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    // Fail closed: unset code → unlock impossible (owner restarts with the code).
+    if (string.IsNullOrWhiteSpace(configured) || string.IsNullOrWhiteSpace(request.UnlockCode) ||
+        !string.Equals(request.UnlockCode, configured, StringComparison.Ordinal))
+    {
+        await audit.WriteAsync(correlationId, "security.unlock", "DENY", "unlock_code_required", cancellationToken);
+        return Results.Json(new { error = "unlock_denied", correlationId }, statusCode: StatusCodes.Status403Forbidden);
+    }
+    if (!securityState.IsLocked)
+    {
+        await audit.WriteAsync(correlationId, "security.unlock", "NOOP", "not_locked", cancellationToken);
+        return Results.Ok(new { locked = false, transitioned = false });
+    }
+    var transitioned = securityState.TryUnlock($"owner_unlock:{(Guid)context.Items["CorrelationId"]!}");
+    await audit.WriteAsync(correlationId, "security.unlock", transitioned ? "ALLOW" : "NOOP", transitioned ? "core_unlocked" : "not_locked", cancellationToken);
+    return Results.Ok(new { locked = false, transitioned });
 });
 
 app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, AuditWriter audit, CancellationToken cancellationToken) =>
@@ -673,7 +714,7 @@ app.MapPost("/agents/tools/read-file", async (FileToolRequest request, HttpConte
     catch (FileNotFoundException) { return Results.NotFound(); }
 });
 
-app.MapPost("/tasks", async (TaskRequest request, HttpContext context, IdentityService identity, AuditWriter audit, CancellationToken cancellationToken) =>
+app.MapPost("/tasks", async (TaskRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     var correlation = (Guid)context.Items["CorrelationId"]!;
     var header = context.Request.Headers.Authorization.ToString();
@@ -686,7 +727,7 @@ app.MapPost("/tasks", async (TaskRequest request, HttpContext context, IdentityS
     }
 
     var decision = AuthorizationPolicy.Evaluate(new AuthorizationRequest(
-        principal, AgentCapability.RunBuild, ToolRiskLevel.LowRisk, "task", "task", false));
+        principal, AgentCapability.RunBuild, ToolRiskLevel.LowRisk, "task", "task", false, CoreLocked: securityState.IsLocked));
     if (decision is AuthorizationDecision.Deny)
     {
         await audit.WriteAuthorizationAsync(correlation, "task.request", "DENY", "authorization_denied", principal,
@@ -781,7 +822,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
         confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "approved", cancellationToken);
     return Results.Ok(new { approved = true, confirmationId, note = "Re-run the execute request; the bound confirmation will be consumed once." });
 });
-app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -827,7 +868,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 var confirmationValid = confirmations.Consume(taskId, currentStep, capability, resource);
                 var decision = AuthorizationPolicy.Evaluate(new AuthorizationRequest(
                     principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: false,
-                    OfflineMode: router.IsOfflineMode, AuthorizationExpiresAt: validLease.ExpiresAt));
+                    OfflineMode: router.IsOfflineMode, CoreLocked: securityState.IsLocked, AuthorizationExpiresAt: validLease.ExpiresAt));
                 if (decision is AuthorizationDecision.ConfirmationRequired)
                 {
                     var pending = confirmations.Issue(taskId, currentStep, capability, resource, effectiveRisk);
@@ -1887,6 +1928,8 @@ public sealed record TaskFeedbackRequest(bool Positive, string? Comment);
 public sealed record PlaySoundRequest(string? Category, string? Name);
 public sealed record MfaEnrollRequest(Guid DeviceId);
 public sealed record MfaVerifyRequest(Guid DeviceId, string Code);
+public sealed record LockRequest(string? Reason);
+public sealed record UnlockRequest(string? UnlockCode);
 
 public sealed class AgentConnectionRegistry
 {
