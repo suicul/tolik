@@ -49,8 +49,24 @@ public static partial class IntentRouter
     public static ChatIntent Classify(string message)
     {
         if (string.IsNullOrWhiteSpace(message)) return new(ChatIntentKind.Conversation, string.Empty);
-        var text = Normalize(message);
+        return ClassifyPatterns(Normalize(message));
+    }
 
+    /// <summary>
+    /// Classifies literal text (§22/T11): no wake-word normalization and no implicit
+    /// "открой <app>" voice convenience — used for sanitizing MODEL output, where
+    /// the model's words stay data and only text that literally matches an executable
+    /// intent pattern is instruction-shaped.
+    /// </summary>
+    public static ChatIntent ClassifyLiteral(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message)) return new(ChatIntentKind.Conversation, string.Empty);
+        return ClassifyPatterns(message.Trim());
+    }
+
+    /// <summary>Shared deterministic pattern checks (explicit, auditable, never the LLM).</summary>
+    private static ChatIntent ClassifyPatterns(string text)
+    {
         // "запомни, это наш семейный мем: X" — до StoreMemory (специфичнее)
         if (text.Contains("семейный мем", StringComparison.OrdinalIgnoreCase))
         {

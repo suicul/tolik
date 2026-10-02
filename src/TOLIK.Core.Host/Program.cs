@@ -1499,8 +1499,11 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
     // base model (observed live: "Я Qwen от Alibaba"). Persona needs a subject.
     prompt = "Ты — Толик, домашний AI-ассистент. Отвечай как Толик. " + prompt;
     var raw = await completion.CompleteAsync(route, new ModelRequest(route.Model, prompt, NumPredict: routeKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? 250 : null, Think: routeKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? false : null, NumCtx: routeKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? 8192 : null), TimeSpan.FromSeconds(120), cancellationToken);
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: {raw}", "chat.assistant", 0.8, cancellationToken);
-    return Results.Ok(new { answer = raw, model = route.Model, action = "model_response", details = route.Model, source = "model" });
+    // §22/T11 sanitization: the model response is untrusted data — instruction-shaped
+    // lines are stripped before display and memory storage (the model never commands).
+    var sanitized = ModelResponseSanitizer.Sanitize(raw);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: {sanitized.Text}", "chat.assistant", 0.8, cancellationToken);
+    return Results.Ok(new { answer = sanitized.Text, model = route.Model, action = "model_response", details = route.Model, source = "model", filteredInstructions = sanitized.RemovedInstructions });
 });
 app.MapPost("/voice/process", async (VoiceHttpRequest request, HttpContext context, IdentityService identity, IVoiceService voice, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, CancellationToken cancellationToken) =>
 {
@@ -1644,18 +1647,20 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         return Results.Problem("Voice model provider is unavailable.", statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    // 4. Memory: store what TOLIK said
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {raw}", "voice.assistant", 0.8, cancellationToken);
+    // 4. Memory: store what TOLIK said (§22/T11 sanitized — instruction-shaped lines
+    //    from the model response never persist or get spoken).
+    var sanitized = ModelResponseSanitizer.Sanitize(raw);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {sanitized.Text}", "voice.assistant", 0.8, cancellationToken);
 
     // 5. TTS вЂ” global runtime mode applies unless the request carries an explicit one.
     // Speech cut: long monologues are trimmed to the last full sentence (~30s of audio).
-    var speech = MemoryContextBuilder.TrimForSpeech(raw);
+    var speech = MemoryContextBuilder.TrimForSpeech(sanitized.Text);
     var runtimeState = context.RequestServices.GetRequiredService<VoiceRuntimeState>();
     var effectiveMode = request.RuntimeMode == VoiceRuntimeMode.Normal && runtimeState.Current != VoiceRuntimeMode.Normal
         ? runtimeState.Current
         : request.RuntimeMode;
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
-    return Results.Ok(new VoiceTurnResponse(transcription.Text, raw, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
+    return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
 });
 app.MapPost("/voice/speaker/enroll", async (HttpContext context, IdentityService identity, IConfiguration configuration, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
 {

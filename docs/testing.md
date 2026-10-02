@@ -9,7 +9,7 @@ dotnet test TOLIK.sln
 Needs: .NET 10 SDK, local Postgres (integration tests create `tolik_test_*`
 databases), Ollama NOT required (model calls are stubbed/absent in tests).
 
-## Coverage map (31 files, 224 tests, green — 146 on 30.09 → 224 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference +10 transport-frame +15 family/enrollment tests, verified green)
+## Coverage map (31 files, 232 tests, green — 146 on 30.09 → 232 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference +10 transport-frame +15 family/enrollment +8 sanitizer tests, verified green)
 
 - Authorization/policy/escalation/transport, identity/challenge/evidence,
   contracts, file tools, path isolation.

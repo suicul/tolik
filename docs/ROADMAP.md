@@ -18,7 +18,7 @@ by owner decision — not on the active list.
 ## Track 1 — Assistant core ✅ mostly done
 Done: API/auth/memory/tasks/planner/AutoPlan/partial-failures/audit+read/
 agent transport/Windows agent/CLI/Linux-shim/proactive (reminders+watchdog)/
-MFA/speaker enroll+verify+guest mode/persona/224 tests/green (146 on 30.09 → 224 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference +10 transport-frame +15 family/enrollment tests, verified green).
+MFA/speaker enroll+verify+guest mode/persona/232 tests/green (146 on 30.09 → 232 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference +10 transport-frame +15 family/enrollment +8 sanitizer tests, verified green).
 Next: enroll wife's voice + family role scoping (§18, wife = scoped scenarios).
 Family scoping DONE 02.10.2026: roles TrustedGuest/Family + ceilings + minimum-role
 matrix (Codex/OpenCode/RunProcess→Owner) + owner-issued enrollment tokens

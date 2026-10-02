@@ -136,8 +136,13 @@ tolik listen                            # голосовой цикл
 
 ## 5. Следующие шаги
 
-1. `dotnet build` → фикс мелких ошибок → `dotnet test`
+1. `dotnet build` → фикс мелких ошибок → `dotnet test` — DONE (224/224 на 02.10).
 2. Прогнать `scripts/test-e2e.ps1` (дописать туда sound/remind/intent-проверки)
 3. Whisper **medium** (small слабоват для русского) + VAD (silero) перед STT
 4. CosyVoice: транскрибировать `voice_reference/` (`scripts/transcribe-dataset.ps1`) → дообучение
-5. Модельные ответы в /chat проходят sanitization (§22) — сейчас raw ответ модели; добавить фильтр инструкций вида «TOLIK, сделай X» из модели
+5. Модельные ответы в /chat проходят sanitization (§22) — DONE 02.10.2026:
+   `ModelResponseSanitizer` (src/TOLIK.Core) — instruction-shaped строки
+   (Tolik-addressed + literal intent patterns через IntentRouter.ClassifyLiteral,
+   без voice-удобства Normalize) вырезаются из ответа модели до отображения,
+   озвучки и записи в память; удалённые строки возвращаются в ответе
+   (filteredInstructions) для прозрачности; wired в /chat + /voice/turn.
