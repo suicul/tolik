@@ -18,6 +18,8 @@ public static class CoreHostingServices
         services.AddSingleton<TOLIK.Infrastructure.Authorization.CoreSecurityState>();
         // Remembered per-user model-routing preference (ask-policy): in-memory singleton.
         services.AddSingleton<TOLIK.Infrastructure.Models.ModelPreferenceStore>();
+        // Owner-issued enrollment tokens (§18 trusted-person enrollment): in-memory singleton.
+        services.AddSingleton<TOLIK.Infrastructure.Identity.EnrollmentTokenStore>();
         return services;
     }
 

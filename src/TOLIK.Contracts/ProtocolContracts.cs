@@ -17,6 +17,8 @@ public static class ProtocolVersions
 public enum IdentityRole
 {
     Guest,
+    TrustedGuest,
+    Family,
     AuthorizedUser,
     Owner
 }

@@ -122,6 +122,12 @@ public static class AuthorizationPolicy
         if (ceiling is null || effectiveRisk > ceiling)
             return AuthorizationDecision.Deny;
 
+        // Minimum role per capability (§18/§19, interface/policy.js CAPABILITY_MIN_ROLE):
+        // Family/TrustedGuest never gain Codex/OpenCode or generic OS execution regardless
+        // of ceilings — a hard Deny that confirmation and MFA cannot rescue. Fail closed.
+        if (TolikRoles.RoleOrder(role.Value) < TolikRoles.RoleOrder(TolikRoles.MinimumRoleFor(request.Capability)))
+            return AuthorizationDecision.Deny;
+
         // Offline cap (stage 2c of the interface/ port): in offline mode only the
         // read-only band (ReadOnly/LowRisk — non-modifying per AGENTS.md §11) is
         // authorized; world-modification requires a live lease path. Hard Deny that

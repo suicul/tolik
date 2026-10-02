@@ -571,6 +571,53 @@ app.MapPost("/auth/devices/{deviceId:guid}/revoke", async (Guid deviceId, Identi
         : Results.NotFound(new { error = "device_not_found" });
 });
 
+// Trusted-person enrollment (docs/SECURITY.md §18, "Запомни, это наш семейный мем"
+// path): the Owner mints a single-use enrollment token for an explicit role; the
+// holder enrolls once with it. Enrollment is explicit, role-scoped, expiring (10 min)
+// and audited — never automatic, never Owner.
+app.MapPost("/auth/enrollment-token", async (EnrollmentTokenRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Identity.EnrollmentTokenStore tokenStore, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "auth.enrollment-token", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    TOLIK.Infrastructure.Identity.EnrollmentTokenRole? role = request.Role?.Trim()?.ToLowerInvariant() switch
+    {
+        "trustedguest" => TOLIK.Infrastructure.Identity.EnrollmentTokenRole.TrustedGuest,
+        "family" => TOLIK.Infrastructure.Identity.EnrollmentTokenRole.Family,
+        _ => null
+    };
+    if (role is null) return Results.BadRequest(new { error = "invalid_role" });
+    var (record, token) = tokenStore.Issue(role.Value, DateTimeOffset.UtcNow);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "auth.enrollment-token", "ALLOW", "enrollment_token_issued", cancellationToken);
+    // The raw token is returned exactly once and never stored (only its hash).
+    return Results.Ok(new { enrollmentToken = token, role = record.Role.ToString(), expiresAt = record.ExpiresAt });
+});
+app.MapPost("/auth/enroll", async (TokenEnrollRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Identity.EnrollmentTokenStore tokenStore, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    try
+    {
+        var enrolled = await identity.EnrollUserWithTokenAsync(tokenStore, request.EnrollmentToken ?? string.Empty, request.InstallationId, request.PublicKey, GetSessionLifetime(context), cancellationToken);
+        await audit.WriteAsync(correlationId, "auth.enroll", "ALLOW", "trusted_person_enrolled", cancellationToken);
+        return Results.Ok(new { userId = enrolled.Principal.UserId, deviceId = enrolled.Principal.DeviceId, role = enrolled.Principal.Role, sessionId = enrolled.Principal.SessionId, sessionToken = enrolled.SessionToken, expiresAt = enrolled.ExpiresAt });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        await audit.WriteAsync(correlationId, "auth.enroll", "DENY", "enrollment_token_denied", cancellationToken);
+        return Results.Json(new { error = "enrollment_token_denied", correlationId }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+    catch (Exception)
+    {
+        await audit.WriteAsync(correlationId, "auth.enroll", "DENY", "enrollment_unavailable", cancellationToken);
+        return Results.Json(new { error = "enrollment_unavailable", correlationId }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+
 app.MapGet("/status", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, CancellationToken cancellationToken) =>
 {
     var token = context.Request.Headers.Authorization.ToString();
@@ -1966,6 +2013,8 @@ public sealed record MfaVerifyRequest(Guid DeviceId, string Code);
 public sealed record LockRequest(string? Reason);
 public sealed record UnlockRequest(string? UnlockCode);
 public sealed record ModelPreferenceRequest(string? Mode);
+public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
+public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
 
 public sealed class AgentConnectionRegistry
 {

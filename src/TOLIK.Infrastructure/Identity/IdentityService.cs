@@ -128,6 +128,40 @@ public sealed class IdentityService(
     }
 
     public async Task<bool> RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == sessionId, cancellationToken); if (session is null) return false; session.RevokedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(cancellationToken); return true; }
+
+    /// <summary>
+    /// Enrolls a trusted person with an owner-issued enrollment token (docs/SECURITY.md
+    /// §18): the token is consumed single-use; the enroller becomes a user with the
+    /// token's explicit role (never Owner — bootstrap is the only Owner path), gets a
+    /// device and a session. Same creation shape as the bootstrap enroll.
+    /// </summary>
+    public async Task<(SessionPrincipal Principal, string SessionToken, DateTimeOffset ExpiresAt)> EnrollUserWithTokenAsync(
+        EnrollmentTokenStore tokenStore, string enrollmentToken, string installationId, string publicKey,
+        TimeSpan sessionLifetime, CancellationToken cancellationToken = default)
+    {
+        if (tokenStore is null) throw new ArgumentNullException(nameof(tokenStore));
+        if (string.IsNullOrWhiteSpace(installationId)) throw new ArgumentException("InstallationId is required.", nameof(installationId));
+        if (string.IsNullOrWhiteSpace(publicKey)) throw new ArgumentException("PublicKey is required.", nameof(publicKey));
+        var now = DateTimeOffset.UtcNow;
+        var record = tokenStore.Consume(enrollmentToken ?? string.Empty, now);
+        if (record is null) throw new UnauthorizedAccessException("enrollment_token_denied");
+        var role = record.Role switch
+        {
+            EnrollmentTokenRole.Family => TolikRoles.FamilyName,
+            _ => TolikRoles.TrustedGuestName
+        };
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var user = new TolikUser { Id = Guid.NewGuid(), Role = role, CreatedAt = now };
+        var device = new TolikDevice { Id = Guid.NewGuid(), UserId = user.Id, InstallationId = installationId, PublicKey = publicKey, CreatedAt = now };
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var session = new TolikSession { Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id, TokenHash = HashToken(token), CreatedAt = now, ExpiresAt = now.Add(sessionLifetime) };
+        db.Users.Add(user);
+        db.Devices.Add(device);
+        db.Sessions.Add(session);
+        await db.SaveChangesAsync(cancellationToken);
+        return (new SessionPrincipal(user.Id, device.Id, session.Id, role), token, session.ExpiresAt);
+    }
+
     public async Task<bool> OwnsSessionAsync(SessionPrincipal principal, Guid sessionId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); return await db.Sessions.AnyAsync(x => x.Id == sessionId && x.UserId == principal.UserId, cancellationToken); }
     public async Task<bool> OwnsDeviceAsync(SessionPrincipal principal, Guid deviceId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); return await db.Devices.AnyAsync(x => x.Id == deviceId && x.UserId == principal.UserId, cancellationToken); }
     public async Task<bool> RevokeDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); var device = await db.Devices.SingleOrDefaultAsync(x => x.Id == deviceId, cancellationToken); if (device is null) return false; device.Revoked = true; await db.Sessions.Where(x => x.DeviceId == deviceId && x.RevokedAt == null).ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, DateTimeOffset.UtcNow), cancellationToken); await db.SaveChangesAsync(cancellationToken); return true; }
