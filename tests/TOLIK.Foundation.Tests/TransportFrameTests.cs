@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using TOLIK.Infrastructure.Transport;
+using TOLIK.Contracts.Transport;
 
 namespace TOLIK.Foundation.Tests;
 

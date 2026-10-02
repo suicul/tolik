@@ -66,14 +66,24 @@ public sealed class WindowsAgent
 
         // Signed transport key exchange (stage d part 2, docs/INTERFACE-ANALYSIS.md):
         // ephemeral P-256 key pair; the public key goes into the registration so Core
-        // pins it by this agent's id and signed frames can verify in both directions
-        // when activated. Ephemeral per process — the Core-side pin is the trust anchor.
-        var signingKey = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
-        PublicKeyPem = signingKey.ExportSubjectPublicKeyInfoPem();
+        // pins it by this agent's id and signed frames verify in both directions once
+        // the hello carries the core key. The private key stays in the process — the
+        // Core-side pin is the trust anchor, this material signs agent frames.
+        _signingKey = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        PublicKeyPem = _signingKey.ExportSubjectPublicKeyInfoPem();
     }
 
     /// <summary>P-256 public key presented at registration for the signed transport (raw kid = agent id).</summary>
     public string PublicKeyPem { get; }
+    private readonly System.Security.Cryptography.ECDsa _signingKey;
+    // Core transport key pinned from the WS hello (key exchange completed → frames activate).
+    private string? _coreKid;
+    private string? _corePublicKeyPem;
+    private System.Security.Cryptography.ECDsa? _coreVerifyKey;
+    // Replay protection for inbound core frames (part 1 primitives).
+    private readonly TOLIK.Contracts.Transport.NonceStore _coreNonces = new();
+    // Pinned core transport key by kid (part 1 primitives).
+    private readonly TOLIK.Contracts.Transport.PeerRegistry _corePeerKeys = new();
 
     public bool IsOnline { get; private set; }
     public string AgentId => _agentId;
@@ -241,6 +251,30 @@ public sealed class WindowsAgent
                             if (type == "hello")
                             {
                                 Console.WriteLine($"[AGENT WS] Connected, user: {root.GetProperty("userId").GetString()}");
+                                // Stage d part 2b: pin the core transport key from the hello —
+                                // the key exchange completes and signed frames activate.
+                                if (root.TryGetProperty("corePublicKey", out var coreKeyProp))
+                                {
+                                    _corePublicKeyPem = coreKeyProp.GetString();
+                                    _coreKid = root.TryGetProperty("coreKid", out var coreKidProp) ? coreKidProp.GetString() : null;
+                                    if (!string.IsNullOrWhiteSpace(_corePublicKeyPem))
+                                    {
+                                        try
+                                        {
+                                            _coreVerifyKey = System.Security.Cryptography.ECDsa.Create();
+                                            _coreVerifyKey.ImportFromPem(_corePublicKeyPem);
+                                            _corePeerKeys.Pin(_coreKid!, _corePublicKeyPem);
+                                            Console.WriteLine($"[AGENT WS] Core transport key pinned (kid: {_coreKid})");
+                                        }
+                                        catch (Exception pemEx)
+                                        {
+                                            Console.Error.WriteLine("[AGENT WS] Core key pin failed: " + pemEx.Message);
+                                            _corePublicKeyPem = null;
+                                            _coreKid = null;
+                                            _coreVerifyKey = null;
+                                        }
+                                    }
+                                }
                             }
                             else if (type == "ping")
                             {
@@ -250,10 +284,39 @@ public sealed class WindowsAgent
                             }
                             else if (type == "command")
                             {
-                                var cmdId = Guid.Parse(root.GetProperty("commandId").GetString()!);
-                                var capability = Enum.Parse<AgentCapability>(root.GetProperty("capability").GetString()!);
-                                var argument = root.GetProperty("argument").GetString() ?? "";
-                                var createdAt = DateTimeOffset.Parse(root.GetProperty("createdAt").GetString()!);
+                                // Stage d part 2b: when the key exchange completed (core key
+                                // pinned from the hello), commands arrive as signed frames —
+                                // verify (audience agent, core kid, nonce replay) then unwrap
+                                // the payload. Legacy plain parse otherwise (fail open only
+                                // for unsigned transport, which ends when the exchange lands).
+                                System.Text.Json.JsonElement commandRoot;
+                                if (_coreVerifyKey is not null && _coreKid is not null)
+                                {
+                                    var frame = System.Text.Json.JsonSerializer.Deserialize<TOLIK.Contracts.Transport.SignedFrame>(json);
+                                    var verified = TOLIK.Contracts.Transport.SignedTransport.Open(
+                                        frame, _coreNonces, _corePeerKeys, DateTimeOffset.UtcNow, expectedAudience: "agent");
+                                    if (!verified.Ok || verified.Frame is null || verified.Frame.SignerKid != _coreKid)
+                                    {
+                                        Console.Error.WriteLine($"[AGENT WS] Command frame rejected: {verified.ErrorCode}");
+                                        continue;
+                                    }
+                                    using var payloadDoc = System.Text.Json.JsonDocument.Parse(verified.Frame.Payload);
+                                    commandRoot = payloadDoc.RootElement.Clone();
+                                    if (!commandRoot.TryGetProperty("type", out var payloadType) || payloadType.GetString() != "command")
+                                    {
+                                        Console.Error.WriteLine("[AGENT WS] Command frame payload is not a command");
+                                        continue;
+                                    }
+                                }
+                                else
+                                {
+                                    commandRoot = root.Clone();
+                                }
+
+                                var cmdId = Guid.Parse(commandRoot.GetProperty("commandId").GetString()!);
+                                var capability = Enum.Parse<AgentCapability>(commandRoot.GetProperty("capability").GetString()!);
+                                var argument = commandRoot.GetProperty("argument").GetString() ?? "";
+                                var createdAt = DateTimeOffset.Parse(commandRoot.GetProperty("createdAt").GetString()!);
                                 
                                 var cmd = new AgentCommandEnvelope(cmdId, Guid.Parse(_agentId), capability, argument, createdAt);
                                 Console.WriteLine($"[AGENT WS] Received command: {cmdId}, Capability: {capability}");
@@ -299,7 +362,19 @@ public sealed class WindowsAgent
                 result = response.Result,
                 error = response.Error
             });
-            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            // Stage d part 2b: when the key exchange completed, responses are sealed
+            // frames (audience core, raw kid = agent id, private key stays in-process).
+            byte[] bytes;
+            if (_coreVerifyKey is not null && _coreKid is not null)
+            {
+                var frame = TOLIK.Contracts.Transport.SignedTransport.Seal(
+                    json, "core", _agentId, _signingKey, Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow);
+                bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(frame));
+            }
+            else
+            {
+                bytes = System.Text.Encoding.UTF8.GetBytes(json);
+            }
             var sent = await SendWsTextAsync(bytes, cancellationToken);
             if (sent) Console.WriteLine($"[AGENT WS] Sent response for {response.CommandId}");
             return sent;

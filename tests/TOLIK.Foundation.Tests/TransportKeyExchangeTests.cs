@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using TOLIK.Contracts;
-using TOLIK.Infrastructure.Transport;
+using TOLIK.Contracts.Transport;
 
 namespace TOLIK.Core.Host.Tests;
 

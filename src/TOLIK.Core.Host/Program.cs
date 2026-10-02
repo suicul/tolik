@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using TOLIK.Core;
 using TOLIK.Infrastructure;
@@ -750,7 +750,7 @@ app.MapGet("/genesis/identity", async (HttpContext context, IdentityService iden
         });
 });
 
-app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, TOLIK.Infrastructure.Transport.PeerRegistry peerKeys, AuditWriter audit, CancellationToken cancellationToken) =>
+app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, TOLIK.Contracts.Transport.PeerRegistry peerKeys, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
@@ -1941,12 +1941,22 @@ app.MapGet("/agents/ws", async context =>
         return;
     }
 
+    // Stage d part 2b: signed frame activation per connection — when this connection's
+    // agent registered with a public key (key exchange completed), inbound command
+    // responses must be sealed frames (verified + nonce replay-guarded).
+    var peerKeys = context.RequestServices.GetRequiredService<TOLIK.Contracts.Transport.PeerRegistry>();
+    var frameNonces = context.RequestServices.GetRequiredService<TOLIK.Contracts.Transport.NonceStore>();
+    var wsAgentId = registry.GetAgentIdForConnection(connectionId);
+    var pinnedKid = wsAgentId is { } aidValue && peerKeys.Resolve(aidValue.ToString("D")) is not null
+        ? aidValue.ToString("D")
+        : null;
+
     // Send hello (stage d part 2: carries the core transport public key so the agent
     // can pin it and verify signed command frames — additive fields, legacy agents ignore them).
-    var coreKeys = context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Transport.CoreTransportKeys>();
+    var coreKeys = context.RequestServices.GetRequiredService<TOLIK.Contracts.Transport.CoreTransportKeys>();
     var hello = System.Text.Encoding.UTF8.GetBytes(
         "{\"type\":\"hello\",\"userId\":\"" + principal.UserId.ToString("D") +
-        "\",\"agent\":true,\"coreKid\":\"" + TOLIK.Infrastructure.Transport.CoreTransportKeys.Kid +
+        "\",\"agent\":true,\"coreKid\":\"" + TOLIK.Contracts.Transport.CoreTransportKeys.Kid +
         "\",\"corePublicKey\":" + System.Text.Json.JsonSerializer.Serialize(coreKeys.PublicKeyPem) + "}");
     await socket.SendAsync(hello, WebSocketMessageType.Text, endOfMessage: true, context.RequestAborted);
 
@@ -1981,10 +1991,38 @@ app.MapGet("/agents/ws", async context =>
                         var msgType = typeProp.GetString();
                         if (msgType == "command_response")
                         {
-                            var cmdId = Guid.Parse(root.GetProperty("commandId").GetString()!);
-                            var outcome = root.GetProperty("outcome").GetInt32();
-                            var result = root.TryGetProperty("result", out var r) ? r.GetString() : null;
-                            var error = root.TryGetProperty("error", out var e) ? e.GetString() : null;
+                            // Stage d part 2b: when this connection's agent registered with a
+                            // public key (key exchange completed), responses must be sealed
+                            // frames — verify (audience core, agent kid, nonce replay) and
+                            // unwrap the payload. Legacy plain parse for unsigned agents.
+                            System.Text.Json.JsonElement responseRoot;
+                            if (pinnedKid is not null)
+                            {
+                                var frame = System.Text.Json.JsonSerializer.Deserialize<TOLIK.Contracts.Transport.SignedFrame>(json);
+                                var verified = TOLIK.Contracts.Transport.SignedTransport.Open(
+                                    frame, frameNonces, peerKeys, DateTimeOffset.UtcNow, expectedAudience: "core");
+                                if (!verified.Ok || verified.Frame is null || verified.Frame.SignerKid != pinnedKid)
+                                {
+                                    Console.Error.WriteLine($"[WS] Response frame rejected: {verified.ErrorCode}");
+                                    continue;
+                                }
+                                using var payloadDoc = System.Text.Json.JsonDocument.Parse(verified.Frame.Payload);
+                                responseRoot = payloadDoc.RootElement.Clone();
+                                if (!responseRoot.TryGetProperty("type", out var payloadType) || payloadType.GetString() != "command_response")
+                                {
+                                    Console.Error.WriteLine("[WS] Response frame payload is not a command_response");
+                                    continue;
+                                }
+                            }
+                            else
+                            {
+                                responseRoot = root.Clone();
+                            }
+
+                            var cmdId = Guid.Parse(responseRoot.GetProperty("commandId").GetString()!);
+                            var outcome = responseRoot.GetProperty("outcome").GetInt32();
+                            var result = responseRoot.TryGetProperty("result", out var r) ? r.GetString() : null;
+                            var error = responseRoot.TryGetProperty("error", out var e) ? e.GetString() : null;
                             var response = new AgentCommandResponse(cmdId, Guid.Empty, (CommandOutcome)outcome, result, error);
                             registry.CompleteWebSocket(connectionId, principal.UserId, response);
                         }
@@ -2127,7 +2165,9 @@ public sealed record ModelPreferenceRequest(string? Mode);
 public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
 
-public sealed class AgentConnectionRegistry
+public sealed class AgentConnectionRegistry(
+    TOLIK.Contracts.Transport.CoreTransportKeys? transportKeys = null,
+    TOLIK.Contracts.Transport.NonceStore? frameNonces = null)
 {
     private readonly ConcurrentDictionary<Guid, (AgentRegistration Registration, Guid UserId, DateTimeOffset ConnectedAt)> connections = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentQueue<AgentCommandEnvelope>> queues = new();
@@ -2321,6 +2361,11 @@ public sealed class AgentConnectionRegistry
     }
 
     /// <summary>Refresh agent LastSeen from any WS activity (pong/heartbeat).</summary>
+    public Guid? GetAgentIdForConnection(Guid connectionId)
+    {
+        lock (connectionGate) return wsConnections.TryGetValue(connectionId, out var ws) ? ws.AgentId : null;
+    }
+
     public void TouchWebSocket(Guid connectionId, Guid userId)
     {
         Guid agentId;
@@ -2378,11 +2423,15 @@ public sealed class AgentConnectionRegistry
     private async Task<bool> TrySendViaWebSocketAsync(Guid agentId, AgentCommandEnvelope command, CancellationToken cancellationToken)
     {
         (Guid ConnId, WebSocket Socket)[] targets;
+        bool agentPinnedKey;
         lock (connectionGate)
         {
             targets = wsConnections.Where(kvp => kvp.Value.AgentId == agentId && kvp.Value.Socket.State == WebSocketState.Open)
                 .Select(kvp => (kvp.Key, kvp.Value.Socket)).ToArray();
             if (targets.Length == 0) return false;
+            // Stage d part 2b: the key exchange completed when the agent registered with
+            // a public key — commands are sealed frames (audience agent, kid core).
+            agentPinnedKey = connections.TryGetValue(agentId, out var conn) && !string.IsNullOrWhiteSpace(conn.Registration.PublicKey);
         }
 
         var json = System.Text.Json.JsonSerializer.Serialize(new
@@ -2393,7 +2442,16 @@ public sealed class AgentConnectionRegistry
             argument = command.Argument,
             createdAt = command.CreatedAt
         });
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        byte[] bytes;
+        if (agentPinnedKey && transportKeys is not null)
+        {
+            var frame = transportKeys.Seal(json, "agent", Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow);
+            bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(frame));
+        }
+        else
+        {
+            bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        }
 
         foreach (var (connId, socket) in targets)
         {

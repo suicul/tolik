@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
-namespace TOLIK.Infrastructure.Transport;
+namespace TOLIK.Contracts.Transport;
 
 /// <summary>
 /// Ported from interface/transport.js NonceStore: replay protection for signed

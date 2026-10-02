@@ -21,8 +21,10 @@ public static class CoreHostingServices
         // Owner-issued enrollment tokens (§18 trusted-person enrollment): in-memory singleton.
         services.AddSingleton<TOLIK.Infrastructure.Identity.EnrollmentTokenStore>();
         // Signed transport key exchange (stage d part 2): core transport keys + agent peer keys.
-        services.AddSingleton<TOLIK.Infrastructure.Transport.CoreTransportKeys>();
-        services.AddSingleton<TOLIK.Infrastructure.Transport.PeerRegistry>();
+        services.AddSingleton<TOLIK.Contracts.Transport.CoreTransportKeys>();
+        services.AddSingleton<TOLIK.Contracts.Transport.PeerRegistry>();
+        // Frame replay protection (part 1 primitives): shared per-process.
+        services.AddSingleton<TOLIK.Contracts.Transport.NonceStore>();
         // Genesis ceremony (docs/genesis.md Phase 6): stateless over the factory — singleton.
         services.AddSingleton<TOLIK.Infrastructure.Genesis.GenesisService>();
         return services;

@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace TOLIK.Infrastructure.Transport;
+namespace TOLIK.Contracts.Transport;
 
 /// <summary>
 /// Ephemeral per-process ECDsa P-256 key pair for the Core side of the signed agent
@@ -21,4 +21,8 @@ public sealed class CoreTransportKeys
 
     /// <summary>Signs raw bytes with the core transport key (frame sealing).</summary>
     public byte[] Sign(byte[] data) => _key.SignData(data, HashAlgorithmName.SHA256);
+
+    /// <summary>Seals a payload into a signed frame with the core transport key (kid = core).</summary>
+    public TOLIK.Contracts.Transport.SignedFrame Seal(string payloadJson, string audience, string nonce, DateTimeOffset now, TimeSpan? ttl = null)
+        => TOLIK.Contracts.Transport.SignedTransport.Seal(payloadJson, audience, Kid, _key, nonce, now, ttl);
 }
