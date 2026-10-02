@@ -20,9 +20,15 @@ Done: API/auth/memory/tasks/planner/AutoPlan/partial-failures/audit+read/
 agent transport/Windows agent/CLI/Linux-shim/proactive (reminders+watchdog)/
 MFA/speaker enroll+verify+guest mode/persona/242 tests/green (146 on 30.09 → 242 now, +4 MemoryOrigin +2 forbidden-surface +2 strict-envelope +18 roles/ceilings +9 lease +10 locked-state +8 model-preference +10 transport-frame +15 family/enrollment +8 sanitizer +4 key-exchange +6 genesis-ceremony tests, verified green).
 Genesis ceremony subsystem DONE 03.10.2026 (Phase 6): preflight + instance identity
-table + owner binding + atomicity + rerun impossibility; ceremony NOT yet run on live
-(live still DEVELOPMENT). Next: PRE-GENESIS hardening pass (dev tokens off, backup
-restore validation, memory separation check, final live parity) → READY_FOR_GENESIS.
+table + owner binding + atomicity + rerun impossibility.
+PRE-GENESIS hardening pass DONE 03.10.2026 (live): core aligned + миграция
+20261002174934 применена (tolik_genesis_identity пуста, ceremony не запускалась),
+memory separation gate: 0 development-строк на live, smoke PASS (origin round-trip,
+genesis gates fail-closed: 400 preflight_failed без MFA/backup), pre-genesis backup
+validated (tolik-backup-pre-genesis.dump, ~2.05 MB, SHA256 sidecar; файл во временной
+папке — переместить в постоянное хранилище перед церемонией).
+Осталось перед READY_FOR_GENESIS (внешние действия владельца на момент церемонии):
+TOLIK_DEV_AUTO_TOKEN off, backup/restore attestations, MFA код, запуск ceremony.
 Next: enroll wife's voice + family role scoping (§18, wife = scoped scenarios).
 Family scoping DONE 02.10.2026: roles TrustedGuest/Family + ceilings + minimum-role
 matrix (Codex/OpenCode/RunProcess→Owner) + owner-issued enrollment tokens
