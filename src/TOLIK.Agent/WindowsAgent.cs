@@ -63,7 +63,17 @@ public sealed class WindowsAgent
             _agentId = Guid.NewGuid().ToString("D");
             File.WriteAllText(idFile, _agentId);
         }
+
+        // Signed transport key exchange (stage d part 2, docs/INTERFACE-ANALYSIS.md):
+        // ephemeral P-256 key pair; the public key goes into the registration so Core
+        // pins it by this agent's id and signed frames can verify in both directions
+        // when activated. Ephemeral per process — the Core-side pin is the trust anchor.
+        var signingKey = System.Security.Cryptography.ECDsa.Create(System.Security.Cryptography.ECCurve.NamedCurves.nistP256);
+        PublicKeyPem = signingKey.ExportSubjectPublicKeyInfoPem();
     }
+
+    /// <summary>P-256 public key presented at registration for the signed transport (raw kid = agent id).</summary>
+    public string PublicKeyPem { get; }
 
     public bool IsOnline { get; private set; }
     public string AgentId => _agentId;
@@ -745,7 +755,8 @@ public sealed class WindowsAgent
     {
         var caps = new[] { "ReadFile", "ListDirectory", "GetProcessStatus", "RunProcess", "RunBuild", "RunTests", "RunCodex", "RunOpenCode", "PlaySound" };
         var capsJson = string.Join(",", caps.Select(c => "\"" + c + "\""));
-        return "{\"agentId\":\"" + _agentId + "\",\"advertisedCapabilities\":[" + capsJson + "]}";
+        var publicKeyJson = System.Text.Json.JsonSerializer.Serialize(PublicKeyPem);
+        return "{\"agentId\":\"" + _agentId + "\",\"advertisedCapabilities\":[" + capsJson + "],\"publicKey\":" + publicKeyJson + "}";
     }
 
     /// <summary>

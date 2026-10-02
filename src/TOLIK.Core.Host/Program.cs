@@ -668,7 +668,7 @@ app.MapPost("/security/unlock", async (UnlockRequest request, HttpContext contex
     return Results.Ok(new { locked = false, transitioned });
 });
 
-app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, AuditWriter audit, CancellationToken cancellationToken) =>
+app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, TOLIK.Infrastructure.Transport.PeerRegistry peerKeys, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
@@ -679,6 +679,25 @@ app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContex
     {
         await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "agent.connect", "DENY", "invalid_registration", cancellationToken);
         return Results.BadRequest(new { error = "invalid_agent_registration", correlationId = context.Items["CorrelationId"] });
+    }
+    // Signed transport key exchange (stage d part 2): an agent that presents its
+    // P-256 public key gets it pinned by its agent id (raw kid, transport.js
+    // semantics); a malformed PEM fails closed. Legacy unsigned agents keep working.
+    if (!string.IsNullOrWhiteSpace(registration.PublicKey))
+    {
+        try
+        {
+            using var key = System.Security.Cryptography.ECDsa.Create();
+            key.ImportFromPem(registration.PublicKey);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Any import failure (malformed PEM, wrong key type, encoding) is a
+            // validation failure: rejected, never swallowed (§40).
+            await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "agent.connect", "DENY", "invalid_public_key", cancellationToken);
+            return Results.BadRequest(new { error = "invalid_public_key", correlationId = context.Items["CorrelationId"] });
+        }
+        peerKeys.Pin(registration.AgentId.ToString("D"), registration.PublicKey);
     }
     try
     {
@@ -1840,8 +1859,13 @@ app.MapGet("/agents/ws", async context =>
         return;
     }
 
-    // Send hello
-    var hello = System.Text.Encoding.UTF8.GetBytes("{\"type\":\"hello\",\"userId\":\"" + principal.UserId.ToString("D") + "\",\"agent\":true}");
+    // Send hello (stage d part 2: carries the core transport public key so the agent
+    // can pin it and verify signed command frames — additive fields, legacy agents ignore them).
+    var coreKeys = context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Transport.CoreTransportKeys>();
+    var hello = System.Text.Encoding.UTF8.GetBytes(
+        "{\"type\":\"hello\",\"userId\":\"" + principal.UserId.ToString("D") +
+        "\",\"agent\":true,\"coreKid\":\"" + TOLIK.Infrastructure.Transport.CoreTransportKeys.Kid +
+        "\",\"corePublicKey\":" + System.Text.Json.JsonSerializer.Serialize(coreKeys.PublicKeyPem) + "}");
     await socket.SendAsync(hello, WebSocketMessageType.Text, endOfMessage: true, context.RequestAborted);
 
     var receiveBuffer = new byte[4096];

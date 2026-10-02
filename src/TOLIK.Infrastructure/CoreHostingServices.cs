@@ -20,6 +20,9 @@ public static class CoreHostingServices
         services.AddSingleton<TOLIK.Infrastructure.Models.ModelPreferenceStore>();
         // Owner-issued enrollment tokens (§18 trusted-person enrollment): in-memory singleton.
         services.AddSingleton<TOLIK.Infrastructure.Identity.EnrollmentTokenStore>();
+        // Signed transport key exchange (stage d part 2): core transport keys + agent peer keys.
+        services.AddSingleton<TOLIK.Infrastructure.Transport.CoreTransportKeys>();
+        services.AddSingleton<TOLIK.Infrastructure.Transport.PeerRegistry>();
         return services;
     }
 

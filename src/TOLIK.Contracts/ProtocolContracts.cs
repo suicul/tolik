@@ -206,7 +206,8 @@ public sealed record CommandRequest(
 
 public sealed record AgentRegistration(
     Guid AgentId,
-    ImmutableHashSet<AgentCapability> AdvertisedCapabilities) : IProtocolPayload
+    ImmutableHashSet<AgentCapability> AdvertisedCapabilities,
+    string? PublicKey = null) : IProtocolPayload
 {
     public ProtocolValidationResult Validate()
     {
@@ -225,6 +226,8 @@ public sealed record AgentRegistration(
             }
         }
 
+        // PublicKey (stage d part 2): optional — carried only; the ECDSA PEM check is
+        // enforced at the connect boundary (crypto stays out of Contracts, which has no deps).
         return ProtocolValidationResult.From(errors);
     }
 }
