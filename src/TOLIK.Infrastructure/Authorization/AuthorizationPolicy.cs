@@ -85,6 +85,7 @@ public sealed record AuthorizationRequest(
     DateTimeOffset? ConfirmationExpiresAt = null,
     bool ConfirmationConsumed = false,
     bool MfaValid = false,
+    bool OfflineMode = false,
     DateTimeOffset? EvaluatedAt = null);
 
 public static class AuthorizationPolicy
@@ -116,6 +117,13 @@ public static class AuthorizationPolicy
         // parked/approved through an alternate decision path. Fail closed.
         var ceiling = TolikRoles.CeilingFor(role.Value);
         if (ceiling is null || effectiveRisk > ceiling)
+            return AuthorizationDecision.Deny;
+
+        // Offline cap (stage 2c of the interface/ port): in offline mode only the
+        // read-only band (ReadOnly/LowRisk — non-modifying per AGENTS.md §11) is
+        // authorized; world-modification requires a live lease path. Hard Deny that
+        // confirmation cannot rescue. Fail closed.
+        if (request.OfflineMode && effectiveRisk > ToolRiskLevel.LowRisk)
             return AuthorizationDecision.Deny;
 
         return effectiveRisk switch

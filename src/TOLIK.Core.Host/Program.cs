@@ -32,6 +32,7 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.WebSocketOptions>(option
 builder.Services.AddTolikCoreInfrastructure();
 builder.Services.AddTolikPostgres(builder.Configuration);
 builder.Services.AddSingleton<ModelRouter>();
+builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore>();
 builder.Services.AddSingleton<OpenAiCompatibleRequestBuilder>();
 builder.Services.AddHttpClient<ModelCompletionClient>();
 // CosyVoiceOptions is a positional record — Configure<T> cannot instantiate it.
@@ -780,7 +781,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
         confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "approved", cancellationToken);
     return Results.Ok(new { approved = true, confirmationId, note = "Re-run the execute request; the bound confirmation will be consumed once." });
 });
-app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -789,6 +790,13 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
     var task = lifecycle.Get(taskId);
     if (task is null) return Results.NotFound();
     if (!lifecycle.TryStart(taskId, out var taskCancellation)) return Results.Conflict(new { error = "invalid_task_state" });
+    // Lease (stage 2c of the interface/ port): a short-lived (60s default) per-run
+    // authorization bound to the authenticated session; its ceiling comes from the
+    // principal's role (unknown/unparsed role → read-only, fail closed). Every step
+    // validates it and its expiry feeds the authorization policy.
+    var parsedRunRole = TolikRoles.Parse(principal.Role);
+    var leaseCeiling = parsedRunRole is { } runRole ? (TolikRoles.CeilingFor(runRole) ?? ToolRiskLevel.ReadOnly) : ToolRiskLevel.ReadOnly;
+    var lease = leases.Issue(principal.SessionId, leaseCeiling);
     using var executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, taskCancellation);
     var completed = new List<string>();
     try
@@ -811,9 +819,15 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 var declaredRisk = TOLIK.Infrastructure.Authorization.ConfirmationStore.DeclaredRiskFor(capability);
                 var (escalatedRisk, _) = TOLIK.Infrastructure.Authorization.ToolEscalation.Evaluate(capability, resource);
                 var effectiveRisk = escalatedRisk > declaredRisk ? escalatedRisk : declaredRisk;
+                // Lease validation per step (stage 2c): unknown, revoked or expired
+                // leases authorize nothing (fail closed).
+                var validLease = leases.Validate(lease.Id);
+                if (validLease is null)
+                    throw new UnauthorizedAccessException("lease_invalid:expired_or_revoked");
                 var confirmationValid = confirmations.Consume(taskId, currentStep, capability, resource);
                 var decision = AuthorizationPolicy.Evaluate(new AuthorizationRequest(
-                    principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: false));
+                    principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: false,
+                    OfflineMode: router.IsOfflineMode, AuthorizationExpiresAt: validLease.ExpiresAt));
                 if (decision is AuthorizationDecision.ConfirmationRequired)
                 {
                     var pending = confirmations.Issue(taskId, currentStep, capability, resource, effectiveRisk);
