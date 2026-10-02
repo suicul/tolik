@@ -1,7 +1,9 @@
 # TOLIK Genesis
 
-One-time birth ceremony of a permanent instance. Status: **concept defined,
-not implemented** (no Genesis code exists as of the baseline commit).
+One-time birth ceremony of a permanent instance. Status: **ceremony subsystem
+implemented** (Phase 6 done 03.10.2026: preflight, instance identity table, owner
+binding, freeze/lock, atomicity, rerun impossibility — tests green; ceremony not yet
+RUN on a real instance: the live deployment is still in DEVELOPMENT lifecycle state).
 
 ## Model
 
@@ -52,5 +54,16 @@ and `security.md`.
 
 ## What is missing (Phase 6)
 
-Preflight checks, instance identity table, owner binding ceremony step,
-freeze/lock mechanism, atomicity/recovery, rerun impossibility.
+Preflight checks — DONE 03.10.2026 (`GenesisPreflight`: owner + MFA verified inline,
+memory separation — 0 `origin=development` rows в production DB, dev-token флаг off,
+runtime authority; backup/restore — operator attestations, фиксируются в ceremony event).
+Instance identity table — DONE 03.10.2026 (`tolik_genesis_identity`, миграция
+20261002174934, unique sentinel `LifecycleState` = rerun impossibility).
+Owner binding ceremony step — DONE 03.10.2026 (`OwnerIdentity` в identity row,
+re-bootstrap заблокирован после ceremony: challenge-gate + defense-in-depth в EnrollOwnerAsync).
+Freeze/lock mechanism — DONE (`CoreSecurityState` LOCKED, 02.10.2026; Genesis freeze =
+персистентный LIFETIME в identity row).
+Atomicity/recovery — DONE 03.10.2026 (identity row + Genesis audit event в ОДНОЙ
+транзакции с advisory lock audit-chain; прерывание → rollback, no half-born state).
+Rerun impossibility — DONE 03.10.2026 (unique index + 409 genesis_already_performed;
+development memory reset запрещён после ceremony).

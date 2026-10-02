@@ -16,6 +16,8 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
     public DbSet<TolikLearnedRuleEntity> LearnedRules => Set<TolikLearnedRuleEntity>();
     public DbSet<TolikProactiveEntity> Proactive => Set<TolikProactiveEntity>();
 
+    public DbSet<TolikGenesisIdentity> GenesisIdentity => Set<TolikGenesisIdentity>();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         EnsureAuditAppendOnly();
@@ -123,5 +125,14 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
         proactive.Property(x => x.Priority).HasMaxLength(16).IsRequired();
         proactive.Property(x => x.Reason).HasMaxLength(512).IsRequired();
         proactive.HasIndex(x => new { x.UserId, x.DeliveredAt, x.DueAt });
+        var genesis = modelBuilder.Entity<TolikGenesisIdentity>();
+        genesis.ToTable("tolik_genesis_identity");
+        genesis.HasKey(x => x.InstanceId);
+        genesis.Property(x => x.CodeIdentity).HasMaxLength(64).IsRequired();
+        genesis.Property(x => x.KnowledgeIdentity).HasMaxLength(64).IsRequired();
+        genesis.Property(x => x.LifecycleState).HasMaxLength(32).IsRequired();
+        // Rerun impossibility (docs/genesis.md): the singleton sentinel column admits
+        // exactly one row — a second ceremony insert violates the unique constraint.
+        genesis.HasIndex(x => x.LifecycleState).IsUnique();
     }
 }

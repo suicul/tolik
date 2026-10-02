@@ -23,6 +23,8 @@ public static class CoreHostingServices
         // Signed transport key exchange (stage d part 2): core transport keys + agent peer keys.
         services.AddSingleton<TOLIK.Infrastructure.Transport.CoreTransportKeys>();
         services.AddSingleton<TOLIK.Infrastructure.Transport.PeerRegistry>();
+        // Genesis ceremony (docs/genesis.md Phase 6): stateless over the factory — singleton.
+        services.AddSingleton<TOLIK.Infrastructure.Genesis.GenesisService>();
         return services;
     }
 

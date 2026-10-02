@@ -95,6 +95,11 @@ public sealed class IdentityService(
         }
         var verifiedBootstrap = bootstrap!;
         var verifiedChallenge = challenge!;
+        // Genesis (docs/genesis.md After Genesis): owner replacement is forbidden after
+        // the ceremony — re-bootstrap is the replacement path, blocked regardless of the
+        // bootstrap being consumed or revoked.
+        if (await db.GenesisIdentity.AnyAsync(cancellationToken))
+            throw new InvalidOperationException("Genesis already performed: owner replacement is forbidden.");
         if (await db.Users.AnyAsync(x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken)) throw new InvalidOperationException("Owner enrollment has already been consumed.");
         var user = new TolikUser { Id = Guid.NewGuid(), Role = TolikRoles.OwnerName, CreatedAt = now };
         var device = new TolikDevice { Id = Guid.NewGuid(), UserId = user.Id, InstallationId = installationId, PublicKey = publicKey, CreatedAt = now };

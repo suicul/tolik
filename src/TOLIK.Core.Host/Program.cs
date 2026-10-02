@@ -668,6 +668,88 @@ app.MapPost("/security/unlock", async (UnlockRequest request, HttpContext contex
     return Results.Ok(new { locked = false, transitioned });
 });
 
+// Genesis ceremony (docs/genesis.md, Phase 6): one-time birth of the permanent
+// instance. Owner-present + MFA + preflight gates all pass → the identity row and the
+// Genesis audit event are written in ONE transaction (no half-born state). Rerun is
+// impossible; after Genesis, owner replacement and silent history deletion are forbidden.
+app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCeremonyRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Genesis.GenesisService genesis, IDbContextFactory<TOLIK.Infrastructure.Persistence.TolikDbContext> factory, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "genesis.ceremony", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+
+    // Preflight gates (docs/genesis.md — all must pass).
+    var mfa = await identity.VerifyMfaAsync(request.MfaDeviceId, request.MfaCode ?? string.Empty, cancellationToken);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    var preflight = await TOLIK.Infrastructure.Genesis.GenesisPreflight.CheckAsync(
+        db,
+        ownerAuthenticated: principal is not null,
+        mfaVerified: mfa.Success,
+        devTokensEnabled: context.RequestServices.GetRequiredService<IConfiguration>().GetValue<bool>("TOLIK_DEV_AUTO_TOKEN", false),
+        runtimeAuthority: context.RequestServices.GetRequiredService<CoreRuntimeDescriptor>().IsAuthorizationAuthority,
+        backupConfirmed: request.BackupConfirmed,
+        restoreTested: request.RestoreTested,
+        cancellationToken);
+    if (!preflight.Passed)
+    {
+        await audit.WriteAsync(correlationId, "genesis.ceremony", "DENY", $"preflight_failed:{string.Join(',', preflight.FailedGates)}", cancellationToken);
+        return Results.Json(new { error = "preflight_failed", failedGates = preflight.FailedGates, correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    try
+    {
+        var identityRow = await genesis.PerformCeremonyAsync(
+            principal.UserId, request.CodeIdentity ?? string.Empty, request.KnowledgeIdentity ?? string.Empty, correlationId, cancellationToken);
+        return Results.Ok(new
+        {
+            instanceId = identityRow.InstanceId,
+            bornAt = identityRow.BornAt,
+            genesisVersion = identityRow.GenesisVersion,
+            codeIdentity = identityRow.CodeIdentity,
+            knowledgeIdentity = identityRow.KnowledgeIdentity,
+            lifecycleState = identityRow.LifecycleState,
+            ownerIdentity = identityRow.OwnerIdentity
+        });
+    }
+    catch (InvalidOperationException)
+    {
+        // Rerun impossibility (docs/genesis.md): the identity is born exactly once.
+        await audit.WriteAsync(correlationId, "genesis.ceremony", "DENY", "genesis_already_performed", cancellationToken);
+        return Results.Conflict(new { error = "genesis_already_performed", correlationId });
+    }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+    catch (Exception)
+    {
+        // Interruption: the transaction rolls back — no half-born state (docs/genesis.md).
+        await audit.WriteAsync(correlationId, "genesis.ceremony", "DENY", "genesis_unavailable", cancellationToken);
+        return Results.Json(new { error = "genesis_unavailable", correlationId }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+});
+app.MapGet("/genesis/identity", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Genesis.GenesisService genesis, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role)) return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var identityRow = await genesis.TryGetIdentityAsync(cancellationToken);
+    return identityRow is null
+        ? Results.NotFound(new { error = "genesis_not_performed" })
+        : Results.Ok(new
+        {
+            instanceId = identityRow.InstanceId,
+            bornAt = identityRow.BornAt,
+            genesisVersion = identityRow.GenesisVersion,
+            codeIdentity = identityRow.CodeIdentity,
+            knowledgeIdentity = identityRow.KnowledgeIdentity,
+            lifecycleState = identityRow.LifecycleState,
+            ownerIdentity = identityRow.OwnerIdentity
+        });
+});
+
 app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, TOLIK.Infrastructure.Transport.PeerRegistry peerKeys, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();

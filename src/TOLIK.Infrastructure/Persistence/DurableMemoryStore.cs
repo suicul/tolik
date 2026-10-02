@@ -175,6 +175,10 @@ public sealed class DurableMemoryStore(IDbContextFactory<TolikDbContext> dbFacto
     {
         if (ownerId == Guid.Empty) throw new ArgumentException("Owner is required.", nameof(ownerId));
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+        // Genesis (docs/genesis.md After Genesis): silent history deletion is forbidden
+        // after the ceremony — the development reset path rejects outright.
+        if (await db.GenesisIdentity.AnyAsync(cancellationToken))
+            throw new InvalidOperationException("Genesis performed: development memory reset is forbidden.");
         var rows = await db.Memories.Where(x => x.OwnerId == ownerId).ToListAsync(cancellationToken);
         db.Memories.RemoveRange(rows);
         await db.SaveChangesAsync(cancellationToken);

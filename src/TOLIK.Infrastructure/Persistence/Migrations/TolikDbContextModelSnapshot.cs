@@ -220,6 +220,44 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("tolik_device_challenges", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikGenesisIdentity", b =>
+                {
+                    b.Property<Guid>("InstanceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("BornAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CodeIdentity")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("GenesisVersion")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("KnowledgeIdentity")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LifecycleState")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("OwnerIdentity")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("InstanceId");
+
+                    b.HasIndex("LifecycleState")
+                        .IsUnique();
+
+                    b.ToTable("tolik_genesis_identity", (string)null);
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikLearnedRuleEntity", b =>
                 {
                     b.Property<Guid>("Id")
