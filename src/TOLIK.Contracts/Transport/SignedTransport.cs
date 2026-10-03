@@ -94,6 +94,13 @@ public static class SignedTransport
     public const string FrameVersion = "v1";
     public static readonly TimeSpan DefaultFrameTtl = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Frame wire format: camelCase + case-insensitive binding — matches the plain WS
+    /// message conventions (lowercase "type"/"commandId") and the frame detection
+    /// ("frameVersion" — TryGetProperty is case-sensitive by default).
+    /// </summary>
+    public static readonly JsonSerializerOptions FrameJsonOptions = new(JsonSerializerDefaults.Web);
+
     private sealed record FrameHeader(
         string FrameVersion,
         string Audience,
