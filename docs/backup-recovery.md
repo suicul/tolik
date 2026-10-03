@@ -17,7 +17,12 @@
 ## What does NOT exist (gaps)
 
 - No schedule (manual runs only).
-- No tested full DR run (fresh machine → restore → boot → verify).
+- ~~No tested full DR run~~ — **DONE 04.10.2026**: полная DR-репетиция — свежий
+  postgres-контейнер (random password, изолированный порт) → pg_restore pre-genesis
+  дампа (13 таблиц, memories=186, users=1) → core boot против восстановленной БД
+  («Database schema is up to date» — без повторной миграции) → /health 200 →
+  **owner binding пережил DR** (re-bootstrap → 401 enrollment_denied — §6: копирование
+  БД не даёт рабочих credentials) → genesis gate 401 без auth → teardown.
 - No code/weights/docs snapshot discipline (only DB is covered).
 - No rollback for migrations or agent actions.
 
