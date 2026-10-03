@@ -33,7 +33,14 @@
   secrets never included), latest validated DB dump + SHA-256 sidecar, optional
   weights (TOLIK_SNAPSHOT_WEIGHTS_DIR), MANIFEST (commit + contents); retention keep 5;
   snapshots/ gitignored (plaintext secrets).
-- No rollback for migrations or agent actions.
+- ~~No rollback for migrations or agent actions~~ — **migrations: DONE 04.10.2026**:
+  `scripts/rollback-postgres.ps1 -TargetMigration <name>` — DESTRUCTIVE (S11): drops
+  schema objects AND their data; требует `-ConfirmRollback` + показывает состояние
+  сначала. Верифицировано в Docker (fresh container): migrate up → rollback
+  AddGenesisIdentity (таблица исчезла) → re-apply (вернулась) — в обе стороны.
+  Отмечу: данные, удалённые rollback'ом, НЕ восстанавливаются (только схема) —
+  полный откат данных = restore-postgres.ps1. Agent actions: plan-level replan /
+  step-fail stop уже реализованы (23-09); полноценный sandbox — post-genesis.
 
 ## Procedure (manual, until scheduled)
 
