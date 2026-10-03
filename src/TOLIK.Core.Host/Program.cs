@@ -521,12 +521,16 @@ app.MapPost("/auth/bootstrap/enroll", async (BootstrapRequest request, IdentityS
     }
 });
 
-app.MapGet("/auth/local-token", async (HttpContext context, IdentityService identity, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapGet("/auth/local-token", async (HttpContext context, IdentityService identity, IDbContextFactory<TOLIK.Infrastructure.Persistence.TolikDbContext> factory, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     // Dev convenience only: explicit opt-in flag AND loopback caller. The page served
     // by Core itself uses this so the owner never hand-copies tokens. fail closed:
     // missing flag or non-loopback looks exactly like "no such endpoint".
     if (!configuration.GetValue<bool>("TOLIK_DEV_AUTO_TOKEN", false)) return Results.NotFound();
+    // Lifecycle gate (docs/lifecycle.md per-state matrix): dev tokens are BLOCKED in
+    // LIFETIME — after the Genesis ceremony they are refused even with the flag on.
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (await db.GenesisIdentity.AnyAsync(cancellationToken)) return Results.NotFound();
     var remote = context.Connection.RemoteIpAddress;
     Console.WriteLine($"[LOCALTOKEN] hit, remote={remote}");
     if (remote is not null && !IsLocalNetwork(remote)) return Results.NotFound();

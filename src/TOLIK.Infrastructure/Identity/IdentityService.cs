@@ -118,6 +118,12 @@ public sealed class IdentityService(
     /// </summary>
     public async Task<(Guid SessionId, string SessionToken, DateTimeOffset ExpiresAt)?> IssueLocalDevTokenAsync(TimeSpan sessionLifetime, CancellationToken cancellationToken = default)
     {
+        // Lifecycle gate (docs/lifecycle.md per-state matrix): dev tokens are BLOCKED
+        // in LIFETIME — after Genesis, defense-in-depth even if the flag was re-enabled.
+        await using (var genesisDb = await contextFactory.CreateDbContextAsync(cancellationToken))
+        {
+            if (await genesisDb.GenesisIdentity.AnyAsync(cancellationToken)) return null;
+        }
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
         var user = await db.Users.SingleOrDefaultAsync(x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken);

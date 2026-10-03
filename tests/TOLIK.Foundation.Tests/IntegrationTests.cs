@@ -28,6 +28,9 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
     /// <summary>Optional out-of-band unlock code for LOCKED-state tests (TOLIK_SECURITY_UNLOCK_CODE).</summary>
     public string? UnlockCode { get; init; }
 
+    /// <summary>Dev-token flag for lifecycle tests (TOLIK_DEV_AUTO_TOKEN; default off per appsettings).</summary>
+    public bool DevTokenEnabled { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting flows into WebApplicationBuilder's initial configuration.
@@ -37,6 +40,7 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
         builder.UseSetting("TOLIK_ALLOWED_ROOTS", "C:\\DEV");
         builder.UseSetting("TOLIK_VOICE:COSYVOICE_ENDPOINT", "http://localhost:8000");
         if (UnlockCode is not null) builder.UseSetting("TOLIK_SECURITY_UNLOCK_CODE", UnlockCode);
+        if (DevTokenEnabled) builder.UseSetting("TOLIK_DEV_AUTO_TOKEN", "true");
 
         builder.ConfigureServices(services =>
         {

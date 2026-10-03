@@ -152,6 +152,53 @@ public sealed class GenesisCeremonyTests
     }
 
     [Fact]
+    public async Task Ceremony_refuses_while_dev_tokens_enabled()
+    {
+        // Preflight gate (docs/genesis.md): dev credentials must be absent — the
+        // ceremony correctly refuses (400) while TOLIK_DEV_AUTO_TOKEN is on.
+        // The ceremony is performed via the service in the LIFETIME test below
+        // (the HTTP ceremony refuses while the flag is on — see this test).
+        using var factory = new CoreHostFactory { DevTokenEnabled = true };
+        using var client = factory.CreateClient();
+        var (sessionToken, deviceId) = await EnrollOwnerWithDeviceAsync(client);
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sessionToken);
+
+        // Before genesis: the dev-token endpoint works (flag on, DEVELOPMENT state).
+        var before = await client.GetAsync("/auth/local-token");
+        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
+
+        // The ceremony → 400 preflight_failed (dev_credentials_present), identity not born.
+        var ceremony = await client.PostAsJsonAsync("/genesis/ceremony", CeremonyBody(deviceId, await EnrollMfaAndGetCurrentCodeAsync(client, deviceId)));
+        Assert.Equal(HttpStatusCode.BadRequest, ceremony.StatusCode);
+        var body = await ceremony.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Contains("dev_credentials_present", body.GetProperty("failedGates").EnumerateArray().Select(g => g.GetString()!).ToList());
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/genesis/identity")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Dev_tokens_are_blocked_in_lifetime_state()
+    {
+        // Lifecycle matrix (docs/lifecycle.md): dev tokens BLOCKED in LIFETIME — after
+        // the Genesis ceremony the endpoint refuses even with the flag on (404,
+        // indistinguishable from "no such endpoint" — the endpoint's fail-closed design).
+        // The ceremony is performed via the service (the HTTP ceremony correctly refuses
+        // while the flag is on — see Ceremony_refuses_while_dev_tokens_enabled).
+        using var factory = new CoreHostFactory { DevTokenEnabled = true };
+        using var client = factory.CreateClient();
+        using var scope = factory.Services.CreateScope();
+        await TestEnrollment.EnrollOwnerAsync(client);
+
+        // Before genesis: the dev-token endpoint works (flag on, DEVELOPMENT state).
+        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/auth/local-token")).StatusCode);
+
+        var genesis = scope.ServiceProvider.GetRequiredService<TOLIK.Infrastructure.Genesis.GenesisService>();
+        await genesis.PerformCeremonyAsync(Guid.NewGuid(), "22133e8", "knowledge-hash-test", Guid.NewGuid());
+
+        // After genesis: dev tokens are blocked (404) despite the flag still being on.
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/auth/local-token")).StatusCode);
+    }
+
+    [Fact]
     public async Task Re_bootstrap_is_blocked_after_genesis()
     {
         using var factory = new CoreHostFactory();

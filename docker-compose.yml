@@ -4,6 +4,9 @@ services:
   postgres:
     image: postgres:17.6-bookworm
     restart: unless-stopped
+    # Parallel fresh-DB migrations (test suite) and heavy queries need more than the
+    # Docker default 64MB /dev/shm (53100 "No space left on device" observed).
+    shm_size: 256m
     environment:
       POSTGRES_DB: tolik
       POSTGRES_USER: tolik
