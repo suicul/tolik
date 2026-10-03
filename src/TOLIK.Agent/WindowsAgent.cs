@@ -245,18 +245,36 @@ public sealed class WindowsAgent
                     {
                         using var doc = System.Text.Json.JsonDocument.Parse(json);
                         var root = doc.RootElement;
-                        if (root.TryGetProperty("type", out var typeProp))
+                        // Stage d part 2b: signed frame detection FIRST — sealed frames carry
+                        // no top-level "type"; the verified payload does. Verify (audience
+                        // agent, core kid, nonce replay) then unwrap. Plain messages
+                        // (ping/hello, legacy) fall through to the type switch.
+                        System.Text.Json.JsonElement effectiveRoot = root;
+                        if (root.TryGetProperty("frameVersion", out _))
+                        {
+                            var frame = System.Text.Json.JsonSerializer.Deserialize<TOLIK.Contracts.Transport.SignedFrame>(json, TOLIK.Contracts.Transport.SignedTransport.FrameJsonOptions);
+                            var verified = TOLIK.Contracts.Transport.SignedTransport.Open(
+                                frame, _coreNonces, _corePeerKeys, DateTimeOffset.UtcNow, expectedAudience: "agent");
+                            if (!verified.Ok || verified.Frame is null || verified.Frame.SignerKid != _coreKid)
+                            {
+                                Console.WriteLine($"[AGENT WS] Frame rejected: {verified.ErrorCode} signerKid={verified.Frame?.SignerKid} coreKid={_coreKid}");
+                                continue;
+                            }
+                            using var payloadDoc = System.Text.Json.JsonDocument.Parse(verified.Frame.Payload);
+                            effectiveRoot = payloadDoc.RootElement.Clone();
+                        }
+                        if (effectiveRoot.TryGetProperty("type", out var typeProp))
                         {
                             var type = typeProp.GetString();
                             if (type == "hello")
                             {
-                                Console.WriteLine($"[AGENT WS] Connected, user: {root.GetProperty("userId").GetString()}");
+                                Console.WriteLine($"[AGENT WS] Connected, user: {effectiveRoot.GetProperty("userId").GetString()}");
                                 // Stage d part 2b: pin the core transport key from the hello —
                                 // the key exchange completes and signed frames activate.
-                                if (root.TryGetProperty("corePublicKey", out var coreKeyProp))
+                                if (effectiveRoot.TryGetProperty("corePublicKey", out var coreKeyProp))
                                 {
                                     _corePublicKeyPem = coreKeyProp.GetString();
-                                    _coreKid = root.TryGetProperty("coreKid", out var coreKidProp) ? coreKidProp.GetString() : null;
+                                    _coreKid = effectiveRoot.TryGetProperty("coreKid", out var coreKidProp) ? coreKidProp.GetString() : null;
                                     if (!string.IsNullOrWhiteSpace(_corePublicKeyPem))
                                     {
                                         try
@@ -284,39 +302,13 @@ public sealed class WindowsAgent
                             }
                             else if (type == "command")
                             {
-                                // Stage d part 2b: when the key exchange completed (core key
-                                // pinned from the hello), commands arrive as signed frames —
-                                // verify (audience agent, core kid, nonce replay) then unwrap
-                                // the payload. Legacy plain parse otherwise (fail open only
-                                // for unsigned transport, which ends when the exchange lands).
-                                System.Text.Json.JsonElement commandRoot;
-                                if (_coreVerifyKey is not null && _coreKid is not null)
-                                {
-                                    var frame = System.Text.Json.JsonSerializer.Deserialize<TOLIK.Contracts.Transport.SignedFrame>(json);
-                                    var verified = TOLIK.Contracts.Transport.SignedTransport.Open(
-                                        frame, _coreNonces, _corePeerKeys, DateTimeOffset.UtcNow, expectedAudience: "agent");
-                                    if (!verified.Ok || verified.Frame is null || verified.Frame.SignerKid != _coreKid)
-                                    {
-                                        Console.Error.WriteLine($"[AGENT WS] Command frame rejected: {verified.ErrorCode}");
-                                        continue;
-                                    }
-                                    using var payloadDoc = System.Text.Json.JsonDocument.Parse(verified.Frame.Payload);
-                                    commandRoot = payloadDoc.RootElement.Clone();
-                                    if (!commandRoot.TryGetProperty("type", out var payloadType) || payloadType.GetString() != "command")
-                                    {
-                                        Console.Error.WriteLine("[AGENT WS] Command frame payload is not a command");
-                                        continue;
-                                    }
-                                }
-                                else
-                                {
-                                    commandRoot = root.Clone();
-                                }
-
-                                var cmdId = Guid.Parse(commandRoot.GetProperty("commandId").GetString()!);
-                                var capability = Enum.Parse<AgentCapability>(commandRoot.GetProperty("capability").GetString()!);
-                                var argument = commandRoot.GetProperty("argument").GetString() ?? "";
-                                var createdAt = DateTimeOffset.Parse(commandRoot.GetProperty("createdAt").GetString()!);
+                                // Stage d part 2b: the frame path already verified + unwrapped
+                                // the payload; the legacy plain path arrives only for unsigned
+                                // transport. Parse the command from the effective root.
+                                var cmdId = Guid.Parse(effectiveRoot.GetProperty("commandId").GetString()!);
+                                var capability = Enum.Parse<AgentCapability>(effectiveRoot.GetProperty("capability").GetString()!);
+                                var argument = effectiveRoot.GetProperty("argument").GetString() ?? "";
+                                var createdAt = DateTimeOffset.Parse(effectiveRoot.GetProperty("createdAt").GetString()!);
                                 
                                 var cmd = new AgentCommandEnvelope(cmdId, Guid.Parse(_agentId), capability, argument, createdAt);
                                 Console.WriteLine($"[AGENT WS] Received command: {cmdId}, Capability: {capability}");
@@ -328,7 +320,7 @@ public sealed class WindowsAgent
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine("[AGENT WS] Parse error: " + ex.Message);
+                        Console.WriteLine("[AGENT WS] Parse error: " + ex.Message);
                     }
                 }
             }
@@ -369,7 +361,7 @@ public sealed class WindowsAgent
             {
                 var frame = TOLIK.Contracts.Transport.SignedTransport.Seal(
                     json, "core", _agentId, _signingKey, Guid.NewGuid().ToString("N"), DateTimeOffset.UtcNow);
-                bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(frame));
+                bytes = System.Text.Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(frame, TOLIK.Contracts.Transport.SignedTransport.FrameJsonOptions));
             }
             else
             {
