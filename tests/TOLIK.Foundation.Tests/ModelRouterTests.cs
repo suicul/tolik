@@ -96,9 +96,9 @@ public sealed class ModelRouterTests
         var builder = new OpenAiCompatibleRequestBuilder();
         var ollama = new ModelRoute("ollama", "m", new Uri("http://localhost:11434"), null);
         var cloud = new ModelRoute("openai-compatible", "m", new Uri("https://provider.invalid/v1/"), "k");
-        Assert.True(ReadPayload(builder.Build(ollama, new ModelRequest("m", "hi", Think: false))).Contains("\"think\":false"));
-        Assert.False(ReadPayload(builder.Build(cloud, new ModelRequest("m", "hi", Think: false))).Contains("think"));
-        Assert.False(ReadPayload(builder.Build(ollama, new ModelRequest("m", "hi"))).Contains("think"));
+        Assert.Contains("\"think\":false", ReadPayload(builder.Build(ollama, new ModelRequest("m", "hi", Think: false))));
+        Assert.DoesNotContain("think", ReadPayload(builder.Build(cloud, new ModelRequest("m", "hi", Think: false))));
+        Assert.DoesNotContain("think", ReadPayload(builder.Build(ollama, new ModelRequest("m", "hi"))));
     }
 
     [Fact]

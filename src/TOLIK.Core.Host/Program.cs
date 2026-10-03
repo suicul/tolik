@@ -710,7 +710,7 @@ app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCere
     try
     {
         var identityRow = await genesis.PerformCeremonyAsync(
-            principal.UserId, request.CodeIdentity ?? string.Empty, request.KnowledgeIdentity ?? string.Empty, correlationId, cancellationToken);
+            principal!.UserId, request.CodeIdentity ?? string.Empty, request.KnowledgeIdentity ?? string.Empty, correlationId, cancellationToken);
         return Results.Ok(new
         {
             instanceId = identityRow.InstanceId,
@@ -2165,8 +2165,7 @@ public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
 
 public sealed class AgentConnectionRegistry(
-    TOLIK.Contracts.Transport.CoreTransportKeys? transportKeys = null,
-    TOLIK.Contracts.Transport.NonceStore? frameNonces = null)
+    TOLIK.Contracts.Transport.CoreTransportKeys? transportKeys = null)
 {
     private readonly ConcurrentDictionary<Guid, (AgentRegistration Registration, Guid UserId, DateTimeOffset ConnectedAt)> connections = new();
     private readonly ConcurrentDictionary<Guid, ConcurrentQueue<AgentCommandEnvelope>> queues = new();
@@ -2287,8 +2286,8 @@ public sealed class AgentConnectionRegistry(
         lock (connectionGate)
         {
             var hasConnection = connections.TryGetValue(agentId, out var current);
-            var hasPending = pending.TryGetValue(response.CommandId, out var completion);
-            if (!hasConnection || current.UserId != userId || response.AgentId != agentId || !hasPending) return false;
+            if (!hasConnection || current.UserId != userId || response.AgentId != agentId ||
+                !pending.TryGetValue(response.CommandId, out var completion)) return false;
             var result = completion.TrySetResult(response);
             Console.WriteLine($"[CORE COMPLETE] Agent {agentId}, cmd {response.CommandId}, outcome {response.Outcome}, accepted: {result}");
             return result;
@@ -2297,8 +2296,6 @@ public sealed class AgentConnectionRegistry(
     
     public Task<(bool Owned, AgentCommandEnvelope? Command)> PollAsync(Guid agentId, Guid userId, CancellationToken cancellationToken)
     {
-        ConcurrentQueue<AgentCommandEnvelope> pollQueue;
-        SemaphoreSlim pollSignal;
         lock (connectionGate)
         {
             if (!connections.TryGetValue(agentId, out var current)) 
@@ -2309,8 +2306,9 @@ public sealed class AgentConnectionRegistry(
             {
                 return Task.FromResult<(bool Owned, AgentCommandEnvelope? Command)>((false, null));
             }
-            if (!queues.TryGetValue(agentId, out pollQueue)) return Task.FromResult<(bool Owned, AgentCommandEnvelope? Command)>((false, null));
-            if (!queueSignals.TryGetValue(agentId, out pollSignal)) return Task.FromResult<(bool Owned, AgentCommandEnvelope? Command)>((false, null));
+            // Queue presence check only: the dequeue re-looks-up outside the gate.
+            if (!queues.ContainsKey(agentId) || !queueSignals.ContainsKey(agentId))
+                return Task.FromResult<(bool Owned, AgentCommandEnvelope? Command)>((false, null));
         }
         // Short-poll: single TryDequeue, no semaphore wait (agent polls every second).
         if (queues.TryGetValue(agentId, out var pollQ) && pollQ.TryDequeue(out var command))

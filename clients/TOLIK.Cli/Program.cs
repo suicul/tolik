@@ -183,9 +183,9 @@ static async Task<int> RunBootstrapAsync(HttpClient httpClient, Uri endpoint, st
 
     var bootstrapClient = new CoreApiClient(httpClient, endpoint, null);
     var enrolled = await bootstrapClient.BootstrapEnrollAsync(bootstrapCode, installationId, key);
-    if (!enrolled.IsSuccess || enrolled.Value?.SessionToken is null)
+    if (enrolled is null || !enrolled.IsSuccess || enrolled.Value?.SessionToken is null)
     {
-        Console.Error.WriteLine("Enrollment failed: " + (enrolled.Error ?? enrolled.StatusCode.ToString()));
+        Console.Error.WriteLine("Enrollment failed: " + (enrolled?.Error ?? enrolled?.StatusCode.ToString() ?? "unknown"));
         return 2;
     }
 
