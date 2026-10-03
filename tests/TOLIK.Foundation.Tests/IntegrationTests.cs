@@ -60,6 +60,10 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
             services.AddSingleton<ConfirmationStore>();
             services.RemoveAll<RealtimeEventHub>();
             services.AddSingleton<RealtimeEventHub>();
+            // The backup scheduler shells out to the backup script (docker) — a test
+            // double keeps integration tests off the live stack.
+            services.RemoveAll<BackupSchedulerBackgroundService>();
+            services.AddSingleton<BackupSchedulerBackgroundService>();
         });
     }
 

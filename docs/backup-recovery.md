@@ -16,7 +16,12 @@
 
 ## What does NOT exist (gaps)
 
-- No schedule (manual runs only).
+- ~~No schedule~~ — **DONE 04.10.2026**: `BackupSchedulerBackgroundService` (Core.Host,
+  паттерн DailyReview) — запуск валидированного скрипта раз в интервал
+  (TOLIK_BACKUP_INTERVAL_HOURS, default 24, 0=disabled) в `TOLIK_BACKUP_DIR`
+  (default `backups/`) + retention (TOLIK_BACKUP_KEEP, default 7 — старые дампы и
+  sidecar'ы удаляются). Host-deployment работает; в контейнере скрипт падает →
+  logged + skipped (container бэкапится с host-стороны). 3 теста retention.
 - ~~No tested full DR run~~ — **DONE 04.10.2026**: полная DR-репетиция — свежий
   postgres-контейнер (random password, изолированный порт) → pg_restore pre-genesis
   дампа (13 таблиц, memories=186, users=1) → core boot против восстановленной БД

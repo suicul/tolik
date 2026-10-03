@@ -57,6 +57,8 @@ builder.Services.AddHostedService<ProactiveReminderBackgroundService>();
 builder.Services.AddHostedService<TaskWatchdogBackgroundService>();
 builder.Services.AddSingleton<DailyReviewService>();
 builder.Services.AddHostedService<DailyReviewBackgroundService>();
+// Scheduled PostgreSQL backups (docs/backup-recovery.md gap: "No schedule").
+builder.Services.AddHostedService<BackupSchedulerBackgroundService>();
 builder.Services.AddSingleton<VoiceRuntimeState>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
