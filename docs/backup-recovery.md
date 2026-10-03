@@ -7,6 +7,12 @@
 - `scripts/restore-postgres.ps1` + `scripts/test-restore-safety.ps1`
   (restore guard + `tests/fixtures/truncated.backup` fixture).
 - Docker volume `tolik_postgres_data` persists across `compose down`.
+- **Pre-genesis backup (03.10.2026): `backups/tolik-backup-pre-genesis.dump`**
+  (persistent local location, SHA-256 `af9f1900…858`). Restore-safety test PASS:
+  fresh target restored with migrations + sentinel, corrupt archive rejected,
+  existing target rejected (guard rails verified). Genesis requirement (backup
+  exists + restore tested + data survives): **exists + tested — demonstrated;
+  off-machine copy — owner's action.** Dumps are gitignored — plaintext secrets.
 
 ## What does NOT exist (gaps)
 

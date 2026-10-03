@@ -5,7 +5,8 @@ implemented** (Phase 6 done 03.10.2026: preflight, instance identity table, owne
 binding, freeze/lock, atomicity, rerun impossibility — tests green) + **PRE-GENESIS
 hardening pass done 03.10.2026 on live**: миграция применена, memory separation gate
 satisfied (0 development-строк), genesis gates verified fail-closed on live, validated
-pre-genesis backup taken. The ceremony itself is NOT yet run: live is in DEVELOPMENT
+pre-genesis backup taken (backups/tolik-backup-pre-genesis.dump, SHA-256) + restore
+safety test PASS (fresh target restored, corrupt rejected — restore tested = FACT). The ceremony itself is NOT yet run: live is in DEVELOPMENT
 lifecycle state with dev tokens on (parity) — turning them off + operator attestations
 + MFA код + запуск ceremony = переход к READY_FOR_GENESIS → LIFETIME.
 

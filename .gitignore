@@ -24,3 +24,6 @@ CosyVoice3/
 *.log
 *.wav
 *.mp3
+
+# DB dumps are plaintext secrets (docs/backup-recovery.md) - never committed
+backups/
