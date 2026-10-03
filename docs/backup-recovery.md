@@ -28,7 +28,11 @@
   («Database schema is up to date» — без повторной миграции) → /health 200 →
   **owner binding пережил DR** (re-bootstrap → 401 enrollment_denied — §6: копирование
   БД не даёт рабочих credentials) → genesis gate 401 без auth → teardown.
-- No code/weights/docs snapshot discipline (only DB is covered).
+- ~~No code/weights/docs snapshot discipline~~ — **DONE 04.10.2026**:
+  `scripts/snapshot-tolik.ps1` — versioned bundle: code+docs (git archive at HEAD,
+  secrets never included), latest validated DB dump + SHA-256 sidecar, optional
+  weights (TOLIK_SNAPSHOT_WEIGHTS_DIR), MANIFEST (commit + contents); retention keep 5;
+  snapshots/ gitignored (plaintext secrets).
 - No rollback for migrations or agent actions.
 
 ## Procedure (manual, until scheduled)
