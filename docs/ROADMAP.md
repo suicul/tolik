@@ -42,12 +42,17 @@ medium/en transcripts, review pending).
 Next: review.tsv curation → owner's CosyVoice fine-tune (owner's track);
 normalization dictionary (Цетус/Гринир seed list ready); game-mode mute.
 
-## Track 3 — Native Windows UI (WPF, approved) 🔲 not started
+## Track 3 — Native Windows UI (WPF, approved) 🔲 not started — BLOCKED on provider
 Cephalon overlay: transparent always-on-top, idle/listening/thinking/speaking/
 working/denied states, direct mic (no browser), mic-always-on WITH indicator
 (approved), game mode silent. Web UI stays as fallback. Voice-ID enroll wizard exists in Web UI (3 phrases +
 verify); port it. Needs: wake-word (openWakeWord) integration,
 challenge-response for sensitive voice actions.
+**BLOCKER (04.10.2026):** три подряд stall'а designer-линии на этой задаче
+(две сессии, ноль файловых записей — провайдер системно убивает длинные поколения
+на этом окружении). Первый MVP-slice размечен (skeleton → overlay → state machine
+→ tray, mic — позже); попытка возобновления — после стабилизации провайдера
+(или интерактивный режим).
 
 ## Track 4 — Memory++ (biggest quality lever after voice)
 1. pgvector + embeddings (associative recall; Postgres ready).
