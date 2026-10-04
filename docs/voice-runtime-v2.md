@@ -116,7 +116,18 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   SSE {"type":"error","error":"model_unavailable"} (graceful, не 5xx). SSE пишется напрямую
   в Response.Body (Results.Stream Func-перегрузка недоступна в этой версии ASP.NET).
   266/266 тестов (+4 parser, +7 chunker).
-- **M5 — barge-in**: playback cancel (клиент/Desktop) + TTS token глубоко + live VAD детекция.
+- **M5 — barge-in** — **DONE 05.10.2026, verified live** (commit a7c25b4):
+  VoiceTurnRegistry (Core): per-user in-flight turns — новый turn авто-отменяет
+  предыдущий (barge-in), Complete/Cancel; CTS не диспозятся (без таймеров, dispose
+  после Cancel гоняет linked-подписчиков). /voice/cancel: отмена СОБСТВЕННОГО
+  in-flight turn'а (per-user scoping §7 — клиент не может отменить чужой), аудируется.
+  /voice/turn-stream: register → linked token (registry CTS + RequestAborted) →
+  LLM stream/TTS/SSE writes → finally Complete. TTS token глубоко: CosyVoice3TtsProvider
+  уже проводит linked token через HTTP POST + read (без фикса).
+  Live: cancel на 6s в середине стрима → {"cancelled":true}, SSE оборвался рано
+  (audio=1, delta=64, без done vs полный delta=250/audio≈12/done=1) — LLM+TTS
+  остановлены. 5 тестов реестра (cancel/no-turn/complete/barge-in/кросс-юзер
+  независимость §7); 271/271 green. VAD-детекция речи во время playback → M6.
 - **M6 — live VAD (Silero)**: threshold/min-speech/silence/pre/post-roll — TOLIK_VAD_* конфиг.
 - **M7 — telemetry + prewarm**: VoiceTurnTelemetry (turn_start/vad/stt/llm/tts/playback
   тайминги, без приватного текста) + prewarm (edge-tts прогрев, XTTS warm) + cold/warm TTFA.
