@@ -90,9 +90,32 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   SupportsRussian/EstimatedLatency/QualityClass) + TtsBackendKind на существующем ITtsProvider.
 - **M3 — TTS routing**: FAST (edge-tts)/QUALITY (XTTS)/AUTO (по классу ответа);
   существующая цепочка = fallback. Не удалять рабочий backend.
-- **M4 — streaming**: server.py /tts/synthesize-stream (edge_tts.stream() chunks → немедленно)
-  + C# SynthesizeStreamAsync → IAsyncEnumerable<TtsChunk>; LLM streaming → sentence chunks.
-  Non-streaming fallback сохраняется.
+- **M4 — streaming** — **DONE 04.10.2026, измерено live** (commits 972867a/67ae182/c3516ff/21ad394):
+
+  - M4a: server.py /tts/synthesize-stream (StreamingResponse, edge chunks, rate-limit
+    retry, offline fallback) + C# SynthesizeStreamAsync; edge-tts 6.1.9→7.2.8 (403 fix).
+  - M4b: SentenceChunker (Split + StreamingChunker, MinChunkLength 12) + LLM streaming
+    (BuildStreaming stream:true — Ollama NDJSON / OpenAI SSE; CompleteStreamAsync
+    IAsyncEnumerable<string>; ExtractStreamDelta — static, testable) + /voice/turn-stream
+    SSE-эндпоинт: LLM deltas → sentence → TTS per-sentence (санитизация per-sentence —
+    инструкции не озвучиваются) → delta/audio/done события; non-streaming fallback.
+
+  | Метрика (live, нативный клиент, zero_shot_prompt.wav) | streaming | non-streaming |
+  |---|---|---|
+  | TTFT (первый delta) cold | 9602 ms | — |
+  | TTFT (первый delta) warm | **1036 ms** | — |
+  | TTFA (первое аудио) warm | **6037 ms** | 15600 ms (= весь turn) |
+  | Total turn warm | 19677 ms | 15600 ms |
+  | События | delta=250, audio=2, done=1 | 1 blob (3.2 MB) |
+
+  Выводы (честные): TTFA warm **6.0s vs 15.6s = 2.6× быстрее первое аудио** — LLM
+  стримит, первая озвученная фраза уходит до завершения генерации. Total стрима дольше
+  (per-sentence TTS 2×944ms + токен-за-токеном LLM) — плата за ранний старт воспроизведения,
+  исчезает при параллельном playback (M5). Cold TTFT 9.6s = загрузка модели Ollama после
+  старта (не streaming overhead) — prewarm M7. Error-путь верифицирован: Ollama down →
+  SSE {"type":"error","error":"model_unavailable"} (graceful, не 5xx). SSE пишется напрямую
+  в Response.Body (Results.Stream Func-перегрузка недоступна в этой версии ASP.NET).
+  266/266 тестов (+4 parser, +7 chunker).
 - **M5 — barge-in**: playback cancel (клиент/Desktop) + TTS token глубоко + live VAD детекция.
 - **M6 — live VAD (Silero)**: threshold/min-speech/silence/pre/post-roll — TOLIK_VAD_* конфиг.
 - **M7 — telemetry + prewarm**: VoiceTurnTelemetry (turn_start/vad/stt/llm/tts/playback
