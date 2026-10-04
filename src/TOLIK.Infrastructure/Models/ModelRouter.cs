@@ -59,6 +59,40 @@ public sealed class OpenAiCompatibleRequestBuilder
         message.Content = JsonContent.Create(payload);
         return message;
     }
+
+    /// <summary>
+    /// Streaming variant (voice-runtime-v2.md 0.5/M4): identical request with
+    /// stream:true — the Ollama answers NDJSON deltas, the OpenAI-compatible SSE.
+    /// The non-streaming Build stays the fallback.
+    /// </summary>
+    public HttpRequestMessage BuildStreaming(ModelRoute route, ModelRequest request)
+    {
+        var message = Build(route, request);
+        // Rewrite the body with stream:true (the endpoint choice is already correct
+        // from Build: Ollama /api/chat, OpenAI chat/completions).
+        var isOllama = string.Equals(route.Provider, "ollama", StringComparison.OrdinalIgnoreCase);
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = request.Model,
+            ["messages"] = new[] { new { role = "user", content = request.Prompt } },
+            ["stream"] = true
+        };
+        if (isOllama)
+        {
+            payload["keep_alive"] = "60m";
+            var options = new Dictionary<string, object?>();
+            if (request.NumPredict.HasValue)
+                options["num_predict"] = request.NumPredict.Value;
+            if (request.NumCtx.HasValue)
+                options["num_ctx"] = request.NumCtx.Value;
+            if (options.Count > 0)
+                payload["options"] = options;
+            if (request.Think.HasValue)
+                payload["think"] = request.Think.Value;
+        }
+        message.Content = JsonContent.Create(payload);
+        return message;
+    }
 }
 
 public sealed class ModelProviderUnavailableException(string message, Exception? inner = null) : Exception(message, inner);
@@ -90,6 +124,90 @@ public sealed class ModelCompletionClient(HttpClient httpClient, OpenAiCompatibl
         {
             throw new ModelProviderUnavailableException("Provider request failed.", ex);
         }
+    }
+
+    /// <summary>
+    /// Streaming completion (voice-runtime-v2.md 0.5/M4): yields text deltas as they
+    /// arrive — the Ollama NDJSON lines and the OpenAI-compatible SSE. The non-streaming
+    /// CompleteAsync stays the fallback. The first yielded delta IS the first token
+    /// (telemetry: LLM TTFT = the time to this call's first delta).
+    /// </summary>
+    public async IAsyncEnumerable<string> CompleteStreamAsync(
+        ModelRoute route,
+        ModelRequest request,
+        TimeSpan timeout,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout);
+        using var message = builder.BuildStreaming(route, request);
+        System.Net.Http.HttpResponseMessage response;
+        try
+        {
+            response = await httpClient.SendAsync(message, System.Net.Http.HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token);
+            if (!response.IsSuccessStatusCode)
+                throw new ModelProviderUnavailableException($"Provider returned {(int)response.StatusCode}.");
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new ModelProviderUnavailableException("Provider request timed out.", ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            throw new ModelProviderUnavailableException("Provider request failed.", ex);
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(timeoutCts.Token);
+        using var reader = new System.IO.StreamReader(stream);
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(timeoutCts.Token);
+            if (line is null) break; // EOF
+            var delta = ExtractStreamDelta(line);
+            if (delta is null) continue; // SSE comments / [DONE] / keep-alives
+            yield return delta;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the text delta from ONE streaming line (static, testable):
+    /// the OpenAI SSE "data: {json}" (choices[0].delta.content, [DONE] → null) or the
+    /// Ollama NDJSON {json} (message.content, done:true → the last delta). Returns null
+    /// for non-data lines / empty deltas.
+    /// </summary>
+    public static string? ExtractStreamDelta(string? line)
+    {
+        if (string.IsNullOrWhiteSpace(line)) return null;
+        var payload = line;
+        if (payload.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            payload = payload[5..].Trim();
+            if (payload == "[DONE]") return null;
+        }
+        if (string.IsNullOrWhiteSpace(payload) || !payload.StartsWith('{')) return null;
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(payload);
+            var root = document.RootElement;
+            // OpenAI: choices[0].delta.content
+            if (root.TryGetProperty("choices", out var choices) && choices.ValueKind == System.Text.Json.JsonValueKind.Array && choices.GetArrayLength() > 0)
+            {
+                var first = choices[0];
+                if (first.TryGetProperty("delta", out var deltaObj) && deltaObj.TryGetProperty("content", out var deltaContent))
+                    return string.IsNullOrEmpty(deltaContent.GetString()) ? null : deltaContent.GetString();
+            }
+            // Ollama: message.content (done:true = the last chunk)
+            if (root.TryGetProperty("message", out var ollamaMessage) && ollamaMessage.TryGetProperty("content", out var ollamaContent))
+                return string.IsNullOrEmpty(ollamaContent.GetString()) ? null : ollamaContent.GetString();
+            // Plain generation shape (Ollama /api/generate-style).
+            if (root.TryGetProperty("response", out var plainResponse) && plainResponse.ValueKind == System.Text.Json.JsonValueKind.String)
+                return string.IsNullOrEmpty(plainResponse.GetString()) ? null : plainResponse.GetString();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return null; // not JSON (keep-alive/comment) — skip
+        }
+        return null;
     }
 
     /// <summary>
