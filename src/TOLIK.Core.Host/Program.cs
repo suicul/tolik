@@ -60,6 +60,7 @@ builder.Services.AddHostedService<DailyReviewBackgroundService>();
 // Scheduled PostgreSQL backups (docs/backup-recovery.md gap: "No schedule").
 builder.Services.AddHostedService<BackupSchedulerBackgroundService>();
 builder.Services.AddSingleton<VoiceRuntimeState>();
+builder.Services.AddSingleton<VoiceTurnRegistry>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
@@ -1769,7 +1770,7 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
     return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
 });
-app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
     // chunks → TTS per-sentence → audio events as they arrive. The client plays
@@ -1900,11 +1901,36 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* the client aborted (barge-in) — the stream just ends */ }
     }
-    // SSE written directly to the response body (the Results.Stream Func overload is
-    // not available in this ASP.NET version's Results surface).
-    context.Response.ContentType = "text/event-stream";
-    await WriteTurnStreamAsync(context.Response.Body, context.RequestAborted);
+    // Barge-in (M5): register the in-flight turn — auto-cancels the previous turn for
+    // this user (the user speaks again). The client abort and POST /voice/cancel both
+    // flow through one linked token.
+    var turnCts = turnRegistry.Register(principal.UserId);
+    using var turnLinked = CancellationTokenSource.CreateLinkedTokenSource(turnCts.Token, context.RequestAborted);
+    try
+    {
+        // SSE written directly to the response body (the Results.Stream Func overload is
+        // not available in this ASP.NET version's Results surface).
+        context.Response.ContentType = "text/event-stream";
+        await WriteTurnStreamAsync(context.Response.Body, turnLinked.Token);
+    }
+    finally
+    {
+        turnRegistry.Complete(principal.UserId);
+    }
     return Results.Empty;
+});
+app.MapPost("/voice/cancel", async (HttpContext context, IdentityService identity, VoiceTurnRegistry turnRegistry, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    // Barge-in (M5): explicit cancellation of the caller's own in-flight voice turn.
+    // The client (Desktop/agent) calls this when the user starts speaking during
+    // playback. Per-user scoping (SECURITY §7): a client can never cancel another
+    // user's turn — the registry is keyed by the authenticated principal.
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var cancelled = turnRegistry.Cancel(principal.UserId);
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.turn.cancel", "ALLOW",
+        cancelled ? "turn_cancelled" : "no_turn_in_flight", principal, null, null, null, "ok", cancellationToken);
+    return Results.Ok(new { cancelled });
 });
 app.MapPost("/voice/speaker/enroll", async (HttpContext context, IdentityService identity, IConfiguration configuration, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
 {
