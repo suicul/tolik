@@ -23,9 +23,11 @@ public sealed class CosyVoice3TtsProvider(HttpClient client, CosyVoiceOptions op
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(options.Timeout);
         // services/voice/server.py: edge-tts (male Russian neural voice) or CosyVoice when configured.
+        // Routing (0.4): the request's resolved preference passed through — fast=edge-only,
+        // quality=XTTS-only, auto=the existing chain (XTTS -> edge -> espeak).
         using var response = await client.PostAsJsonAsync(
             new Uri(options.Endpoint, "tts/synthesize"),
-            new { text = request.Text, speaker = "tolik" },
+            new { text = request.Text, speaker = "tolik", engine = request.Routing.ToString().ToLowerInvariant() },
             timeout.Token);
         response.EnsureSuccessStatusCode();
         var bytes = await response.Content.ReadAsByteArrayAsync(timeout.Token);

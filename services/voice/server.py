@@ -42,6 +42,7 @@ class TtsRequest(BaseModel):
     text: str
     speaker: str = "tolik"
     speed: float = 1.0
+    engine: str = "auto"
 
 
 _state = {"stt": None, "stt_engine": None, "stt_name": None, "cosyvoice": None, "tts_engine": "edge-tts"}
@@ -201,19 +202,30 @@ async def transcribe(file: UploadFile = File(...), language: str = Form("ru")):
 
 @app.post("/tts/synthesize")
 def synthesize(request: TtsRequest):
-    log.info("TTS synthesize requested: %d chars", len(request.text or ""))
+    log.info("TTS synthesize requested: %d chars engine=%s", len(request.text or ""), request.engine)
     text = (request.text or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="empty_text")
 
+    # Routing (voice-runtime-v2.md 0.4): fast=edge-tts only (interactive), quality=XTTS
+    # only (expressive/long), auto=the existing chain (XTTS -> edge -> offline).
+    # The chain remains the fallback for quality failures — speech never breaks.
+    engine = (request.engine or "auto").strip().lower() or "auto"
+    if engine == "quality":
+        xtts_endpoint = os.getenv("TOLIK_XTTS_ENDPOINT", "").strip()
+        if not xtts_endpoint:
+            raise HTTPException(status_code=503, detail="quality_tts_not_configured")
+        return _synthesize_xtts(xtts_endpoint, text)
+
     # Primary engine: XTTS sidecar when configured (local neural voice, no
     # network filtering issues), then edge-tts, then offline fallback.
-    xtts_endpoint = os.getenv("TOLIK_XTTS_ENDPOINT", "").strip()
-    if xtts_endpoint:
-        try:
-            return _synthesize_xtts(xtts_endpoint, text)
-        except Exception as ex:  # noqa: BLE001 — fall through to the regular chain
-            log.warning("XTTS sidecar failed, falling back: %s", ex)
+    if engine == "auto":
+        xtts_endpoint = os.getenv("TOLIK_XTTS_ENDPOINT", "").strip()
+        if xtts_endpoint:
+            try:
+                return _synthesize_xtts(xtts_endpoint, text)
+            except Exception as ex:  # noqa: BLE001 — fall through to the regular chain
+                log.warning("XTTS sidecar failed, falling back: %s", ex)
     if _state["tts_engine"] == "edge-tts":
         forced = os.getenv("TOLIK_TTS_ENGINE", "auto").strip().lower()
         if forced == "espeak":

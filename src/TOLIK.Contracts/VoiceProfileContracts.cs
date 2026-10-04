@@ -13,17 +13,26 @@ public sealed record VoiceProfile(
 {
     public bool IsValid => !string.IsNullOrWhiteSpace(Name) && Language == "ru-RU" && PitchSemitones is >= -24 and <= 24 && FormantShift is >= -1 and <= 1 && Compression is >= 0 and <= 1 && Saturation is >= 0 and <= 1 && VocoderMix is >= 0 and <= 1;
 }
-public sealed record VoiceRuntimePolicy(bool SttEnabled, bool TtsEnabled, bool LocalInferenceEnabled, bool HotkeyOnly)
+/// <summary>TTS backend routing (docs/voice-runtime-v2.md 0.4): Auto = the runtime mode decides,
+/// Fast/Quality = the explicit override for the request.</summary>
+public enum TtsRoutingPreference { Auto, Fast, Quality }
+
+public sealed record VoiceRuntimePolicy(
+    bool SttEnabled,
+    bool TtsEnabled,
+    bool LocalInferenceEnabled,
+    bool HotkeyOnly,
+    TtsRoutingPreference TtsRouting = TtsRoutingPreference.Auto)
 {
     public static VoiceRuntimePolicy For(VoiceRuntimeMode mode) => mode switch
     {
-        VoiceRuntimeMode.Gaming => new(false, false, false, false),
-        VoiceRuntimeMode.GamingAssist => new(true, false, false, true),
-        VoiceRuntimeMode.Night => new(true, true, false, false),
-        _ => new(true, true, true, false)
+        VoiceRuntimeMode.Gaming => new(false, false, false, false, TtsRoutingPreference.Fast),
+        VoiceRuntimeMode.GamingAssist => new(true, false, false, true, TtsRoutingPreference.Fast),
+        VoiceRuntimeMode.Night => new(true, true, false, false, TtsRoutingPreference.Fast),
+        _ => new(true, true, true, false, TtsRoutingPreference.Auto)
     };
 }
-public sealed record TtsRequest(string Text, VoiceProfile Profile, VoiceMode Mode);
+public sealed record TtsRequest(string Text, VoiceProfile Profile, VoiceMode Mode, TtsRoutingPreference Routing = TtsRoutingPreference.Auto);
 public sealed record TtsAudio(byte[] Data, string ContentType, TimeSpan Duration);
 public interface ITtsProvider
 {

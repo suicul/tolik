@@ -28,7 +28,11 @@ public sealed class VoiceRuntimeGate(ITtsProvider ttsProvider)
     public async Task<TtsAudio?> SynthesizeIfEnabledAsync(TtsRequest request, VoiceRuntimeMode runtimeMode, CancellationToken cancellationToken = default)
     {
         var policy = VoiceRuntimePolicy.For(runtimeMode);
-        return policy.TtsEnabled ? await ttsProvider.SynthesizeAsync(request, cancellationToken) : null;
+        if (!policy.TtsEnabled) return null;
+        // TTS routing (0.4): the request's explicit Fast/Quality wins; Auto = the mode's
+        // policy (Night/Gaming/GamingAssist → Fast, Normal → the chain default).
+        var routing = request.Routing == TtsRoutingPreference.Auto ? policy.TtsRouting : request.Routing;
+        return await ttsProvider.SynthesizeAsync(request with { Routing = routing }, cancellationToken);
     }
 }
 
