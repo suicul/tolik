@@ -4,6 +4,14 @@ namespace TOLIK.Core;
 
 public sealed class DeterministicTtsProvider : ITtsProvider
 {
+    public TtsCapabilities Capabilities { get; } = new(
+        TtsBackendKind.Offline,
+        SupportsStreaming: false,
+        SupportsCancellation: true,
+        SupportsRussian: false,
+        EstimatedLatencyMs: 1,
+        QualityClass: "test-stub");
+
     public async Task<TtsAudio> SynthesizeAsync(TtsRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -77,6 +77,14 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
 /// <summary>Test TTS provider that returns empty audio (disabled TTS for testing).</summary>
 public sealed class TestTtsProvider : ITtsProvider, ILocalVoiceRuntime
 {
+    public TtsCapabilities Capabilities { get; } = new(
+        TtsBackendKind.Offline,
+        SupportsStreaming: false,
+        SupportsCancellation: true,
+        SupportsRussian: false,
+        EstimatedLatencyMs: 1,
+        QualityClass: "test-stub");
+
     public Task<TtsAudio> SynthesizeAsync(TtsRequest request, CancellationToken cancellationToken = default)
         => Task.FromResult(new TtsAudio(Array.Empty<byte>(), "audio/wav", TimeSpan.Zero));
 

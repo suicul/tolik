@@ -6,6 +6,16 @@ namespace TOLIK.Core;
 
 public sealed class CosyVoice3TtsProvider(HttpClient client, CosyVoiceOptions options) : ITtsProvider, ILocalVoiceRuntime
 {
+    // M1 benchmark-backed declaration (docs/voice-runtime-v2.md): the MEASURED warm
+    // latency (944ms), not invented. Streaming arrives in M4; cancellation exists.
+    public TtsCapabilities Capabilities { get; } = new(
+        TtsBackendKind.Quality,
+        SupportsStreaming: false,
+        SupportsCancellation: true,
+        SupportsRussian: true,
+        EstimatedLatencyMs: 944,
+        QualityClass: "quality-gpu-xtts");
+
     public async Task<TtsAudio> SynthesizeAsync(TtsRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
