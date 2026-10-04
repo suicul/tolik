@@ -28,3 +28,4 @@ CosyVoice3/
 # DB dumps are plaintext secrets (docs/backup-recovery.md) - never committed
 backups/
 snapshots/
+__pycache__/
