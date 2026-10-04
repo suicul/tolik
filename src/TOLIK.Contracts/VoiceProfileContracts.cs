@@ -34,12 +34,25 @@ public sealed record VoiceRuntimePolicy(
 }
 public sealed record TtsRequest(string Text, VoiceProfile Profile, VoiceMode Mode, TtsRoutingPreference Routing = TtsRoutingPreference.Auto);
 public sealed record TtsAudio(byte[] Data, string ContentType, TimeSpan Duration);
+
+/// <summary>Streaming TTS chunk (docs/voice-runtime-v2.md 0.5/M4): a piece of audio served
+/// as it arrives; IsFinal marks the stream end. The non-streaming TtsAudio stays the fallback.</summary>
+public sealed record TtsChunk(byte[] Data, bool IsFinal);
 public interface ITtsProvider
 {
     /// <summary>Backend capability declaration (docs/voice-runtime-v2.md M2/M1): declarative, benchmark-backed.</summary>
     TtsCapabilities Capabilities { get; }
 
     Task<TtsAudio> SynthesizeAsync(TtsRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Streaming synthesis (0.5/M4): chunks served as they arrive; the non-streaming
+    /// SynthesizeAsync stays the fallback. Default: NOT supported — throws synchronously
+    /// so a caller that ignored Capabilities.SupportsStreaming fails fast (never a fake
+    /// empty stream). Providers override when the backend streams.
+    /// </summary>
+    IAsyncEnumerable<TtsChunk> SynthesizeStreamAsync(TtsRequest request, CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("TTS streaming is not supported by this provider.");
 }
 
 /// <summary>TTS backend kind (docs/voice-runtime-v2.md 0.4): the routing base classes.</summary>

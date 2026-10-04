@@ -7,7 +7,9 @@ FROM python:3.12-slim AS build
 WORKDIR /src
 
 # System dependencies for faster-whisper, edge-tts, pyotp, qrcode, and kerberos (for MFA)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt over HTTPS: the network blocks plain HTTP/80 to deb.debian.org (observed 04.10).
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true \
+    && apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
     libsndfile1 \
@@ -33,7 +35,9 @@ ENV HOME=/app \
     TOLIK_STT_DEVICE=cpu
 
 # Runtime dependencies (including espeak for offline TTS fallback on Linux)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt over HTTPS: the network blocks plain HTTP/80 to deb.debian.org (observed 04.10).
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null || true \
+    && apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     ffmpeg \
     libgomp1 \

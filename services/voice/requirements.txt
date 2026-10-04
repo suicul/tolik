@@ -1,7 +1,7 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 faster-whisper==1.2.1
-edge-tts==6.1.9
+edge-tts==7.2.8
 pyotp==2.9.0
 qrcode==7.4.2
 pillow==10.4.0

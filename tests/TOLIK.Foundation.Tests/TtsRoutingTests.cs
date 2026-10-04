@@ -23,30 +23,29 @@ public sealed class TtsRoutingTests
     }
 
     [Fact]
-    public void Explicit_routing_wins_over_policy()
+    public async Task Explicit_routing_wins_over_policy()
     {
         var gate = new VoiceRuntimeGate(new DeterministicTtsProvider());
         var request = new TtsRequest("тест", VoiceProfileDefaults(), VoiceMode.Normal, TtsRoutingPreference.Quality);
-        var task = gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Night);
-        var audio = task.GetAwaiter().GetResult();
+        var audio = await gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Night);
         Assert.NotNull(audio); // Night: TtsEnabled=true; the explicit Quality routing passes through
     }
 
     [Fact]
-    public void Auto_routing_resolves_to_mode_policy()
+    public async Task Auto_routing_resolves_to_mode_policy()
     {
         var gate = new VoiceRuntimeGate(new DeterministicTtsProvider());
         var request = new TtsRequest("тест", VoiceProfileDefaults(), VoiceMode.Normal); // Auto
-        var audio = gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Night).GetAwaiter().GetResult();
+        var audio = await gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Night);
         Assert.NotNull(audio); // Auto → Night policy (Fast routing) → TtsEnabled=true
     }
 
     [Fact]
-    public void Tts_disabled_mode_returns_null_regardless_of_routing()
+    public async Task Tts_disabled_mode_returns_null_regardless_of_routing()
     {
         var gate = new VoiceRuntimeGate(new DeterministicTtsProvider());
         var request = new TtsRequest("тест", VoiceProfileDefaults(), VoiceMode.Normal, TtsRoutingPreference.Fast);
-        var audio = gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Gaming).GetAwaiter().GetResult();
+        var audio = await gate.SynthesizeIfEnabledAsync(request, VoiceRuntimeMode.Gaming);
         Assert.Null(audio); // Gaming: TtsEnabled=false — routing cannot resurrect speech
     }
 
@@ -59,7 +58,7 @@ public sealed class TtsRoutingTests
         Assert.Equal(TtsBackendKind.Quality, provider.Capabilities.Kind);
         Assert.True(provider.Capabilities.SupportsCancellation);
         Assert.True(provider.Capabilities.SupportsRussian);
-        Assert.False(provider.Capabilities.SupportsStreaming); // arrives in M4
+        Assert.True(provider.Capabilities.SupportsStreaming); // M4a: the server's streaming endpoint + SynthesizeStreamAsync
         Assert.Equal(944, provider.Capabilities.EstimatedLatencyMs);
     }
 

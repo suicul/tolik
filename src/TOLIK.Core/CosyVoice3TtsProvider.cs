@@ -7,10 +7,11 @@ namespace TOLIK.Core;
 public sealed class CosyVoice3TtsProvider(HttpClient client, CosyVoiceOptions options) : ITtsProvider, ILocalVoiceRuntime
 {
     // M1 benchmark-backed declaration (docs/voice-runtime-v2.md): the MEASURED warm
-    // latency (944ms), not invented. Streaming arrives in M4; cancellation exists.
+    // latency (944ms), not invented. Streaming: the server's /tts/synthesize-stream
+    // (M4) serves edge chunks as they arrive; cancellation exists.
     public TtsCapabilities Capabilities { get; } = new(
         TtsBackendKind.Quality,
-        SupportsStreaming: false,
+        SupportsStreaming: true,
         SupportsCancellation: true,
         SupportsRussian: true,
         EstimatedLatencyMs: 944,
@@ -39,5 +40,37 @@ public sealed class CosyVoice3TtsProvider(HttpClient client, CosyVoiceOptions op
     {
         try { using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); cts.CancelAfter(options.Timeout); using var response = await client.GetAsync(new Uri(options.Endpoint, "health"), cts.Token); return new(response.IsSuccessStatusCode, response.IsSuccessStatusCode ? "ready" : "unavailable", DateTimeOffset.UtcNow); }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException) { return new(false, "unavailable", DateTimeOffset.UtcNow); }
+    }
+
+    /// <summary>
+    /// Streaming synthesis (0.5/M4): POST /tts/synthesize-stream; the chunked response
+    /// is read as it arrives — each yield is a playable audio piece. Cancellation stops
+    /// the HTTP read (and, through it, the server-side stream). Routing is passed through.
+    /// </summary>
+    public async IAsyncEnumerable<TtsChunk> SynthesizeStreamAsync(
+        TtsRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(options.Timeout);
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, new Uri(options.Endpoint, "tts/synthesize-stream"))
+        {
+            Content = JsonContent.Create(new
+            {
+                text = request.Text,
+                speaker = "tolik",
+                engine = request.Routing.ToString().ToLowerInvariant()
+            })
+        };
+        using var response = await client.SendAsync(requestMessage, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        response.EnsureSuccessStatusCode();
+        await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
+        var buffer = new byte[8192];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), timeout.Token);
+            if (read == 0) break;
+            yield return new TtsChunk(buffer[..read], IsFinal: false);
+        }
+        yield return new TtsChunk([], IsFinal: true);
     }
 }

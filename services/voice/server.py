@@ -22,7 +22,7 @@ import time
 from typing import Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -200,6 +200,99 @@ async def transcribe(file: UploadFile = File(...), language: str = Form("ru")):
     )
 
 
+@app.post("/tts/synthesize-stream")
+async def synthesize_stream(request: TtsRequest):
+    """Streaming TTS (voice-runtime-v2.md 0.5/M4): edge-tts mp3 chunks are served as
+    they arrive (chunked transfer) — the client plays chunk-by-chunk instead of waiting
+    for the full audio. Non-streaming /tts/synthesize stays the fallback.
+    Routing: quality/XTTS → blob via a single chunk; fast/auto → edge streaming."""
+    log.info("TTS stream requested: %d chars engine=%s", len(request.text or ""), request.engine)
+    text = (request.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="empty_text")
+    engine = (request.engine or "auto").strip().lower() or "auto"
+
+    async def single_chunk(data: bytes):
+        yield data
+
+    xtts_endpoint = os.getenv("TOLIK_XTTS_ENDPOINT", "").strip()
+    if engine == "quality":
+        # XTTS: no server-side streaming (blob) — serve as one chunk; on failure 503.
+        if not xtts_endpoint:
+            raise HTTPException(status_code=503, detail="quality_tts_not_configured")
+        response = _synthesize_xtts(xtts_endpoint, text)
+        return StreamingResponse(single_chunk(response.body), media_type="audio/wav")
+
+    if engine == "auto" and xtts_endpoint:
+        # auto: the chain default (XTTS first) served as one chunk; edge streaming on failure.
+        try:
+            response = _synthesize_xtts(xtts_endpoint, text)
+            return StreamingResponse(single_chunk(response.body), media_type="audio/wav")
+        except Exception as ex:  # noqa: BLE001 — fall through to edge streaming
+            log.warning("XTTS sidecar failed, falling back to edge streaming: %s", ex)
+
+    if _state["tts_engine"] != "edge-tts":
+        raise HTTPException(status_code=503, detail="tts_not_configured")
+    if time.time() < _state.get("edge_cooldown_until", 0.0):
+        log.info("edge-tts cooling down after failures, offline TTS (single chunk)")
+        offline = _synthesize_offline(text)
+        if not offline:
+            raise HTTPException(status_code=503, detail="tts_offline_failed")
+        return StreamingResponse(single_chunk(offline), media_type="audio/wav")
+
+    voice = _edge_voice(request.speaker)
+
+    async def edge_chunks():
+        # The same network bound as the non-streaming path: a stalled Microsoft
+        # connection must not hang the stream forever (observed: 60s+ with no error).
+        # RATE LIMIT (observed 04.10, matrix test): Microsoft throttles ~1 request per
+        # 4-6s — rapid requests fail with NoAudioReceived in an alternating pattern.
+        # Retry once after a 3s backoff (only when nothing was yielded — a mid-stream
+        # failure must not duplicate already-played audio), then the offline fallback.
+        import asyncio
+        import edge_tts
+
+        async def bounded_stream():
+            communicate = edge_tts.Communicate(text, voice)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        got_audio = False
+        for attempt in range(2):
+            try:
+                async with asyncio.timeout(12):
+                    async for chunk in bounded_stream():
+                        got_audio = True
+                        yield chunk
+                if got_audio:
+                    return
+            except Exception as ex:  # noqa: BLE001 — network TTS can fail many ways
+                if got_audio:
+                    return  # mid-stream failure: partial audio already played, no duplicate
+                log.warning("edge-tts stream attempt %d failed: %s", attempt + 1, ex)
+            if attempt == 0:
+                await asyncio.sleep(3)
+        log.warning("edge-tts streaming cooling down for 10 minutes after retries")
+        _state["edge_cooldown_until"] = time.time() + 600.0
+        offline = _synthesize_offline(text)  # Response; raises 503 if no offline engine
+        if offline and offline.body:
+            yield offline.body
+
+    return StreamingResponse(edge_chunks(), media_type="audio/mpeg")
+
+
+def _edge_voice(speaker: str) -> str:
+    # Map short speaker names to full edge-tts voice ids; default = male Russian Dmitry.
+    voices = {
+        "tolik": "ru-RU-DmitryNeural",
+        "dmitry": "ru-RU-DmitryNeural",
+        "pavel": "ru-RU-PavelNeural",
+        "male": "ru-RU-DmitryNeural",
+        "female": "ru-RU-SvetlanaNeural",
+    }
+    return voices.get((speaker or "").lower(), "ru-RU-DmitryNeural")
+
+
 @app.post("/tts/synthesize")
 def synthesize(request: TtsRequest):
     log.info("TTS synthesize requested: %d chars engine=%s", len(request.text or ""), request.engine)
@@ -325,7 +418,9 @@ def _synthesize_edge(text: str, speaker: str) -> Response:
         except Exception as ex:  # noqa: BLE001 — network TTS can fail many ways
             last_error = ex
             log.warning("edge-tts attempt %d failed: %s", attempt + 1, ex)
-            time_module.sleep(0.2)
+            # RATE LIMIT (observed 04.10): ~1 request per 4-6s — a fast retry hits the
+            # same throttle; back off before the next attempt.
+            time_module.sleep(3)
     log.warning("edge-tts cooling down for 10 minutes: %s", last_error)
     _state["edge_cooldown_until"] = time_module.time() + 600.0
     return _synthesize_offline(text)
