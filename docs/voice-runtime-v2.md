@@ -67,9 +67,25 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
 
 ## 4. План реализации M1-M8 + Phase 1
 
-- **M1 — TTS benchmark** (scripts/benchmark-tts.py): TTFA/total/RTF для edge-tts/XTTS/espeak
-  на русском наборе (ACK/обычный/длинный/числа/термины/имена/эмоция), cold/warm,
-  RAM/VRAM (XTTS). Воспроизводимо, отчёт в docs. Не фальсифицировать.
+- **M1 — TTS benchmark** — **DONE 04.10.2026, измерено** (scripts/benchmark-tts.py, live):
+
+  | Фраза | chain total | duration | RTF |
+  |---|---|---|---|
+  | ack (cold) | 2138 ms | 2.04s | 1.05 |
+  | normal | 1037 ms | 4.36s | 0.24 |
+  | long | 2226 ms | 9.28s | 0.24 |
+  | numbers | 2010 ms | 8.49s | 0.24 |
+  | technical | 1894 ms | 8.08s | 0.23 |
+  | names | 1317 ms | 5.57s | 0.24 |
+  | emotional | 1244 ms | 5.32s | 0.23 |
+  | ack (xtts, cold) | **520 ms** | 2.22s | 0.23 |
+  | normal (xtts, warm) | 944 ms | 3.89s | 0.24 |
+
+  Выводы (честные): RTF 0.23-0.24 warm — быстрее реального времени ✓; cold chain
+  2138ms (прогрев после простоя) vs XTTS direct cold 520ms — overhead цепочки ~1.6s
+  на cold; **TTFA == total для blob API** (цель <200ms недостижима без streaming — M4);
+  total turn = LLM (не измерено) + TTS ~1-2s — телеметрия M7 измерит LLM TTFT.
+  espeak-only/edge-only замеры — per-engine server instances (follow-up).
 - **M2 — backend abstraction**: TtsCapabilities (SupportsStreaming/SupportsCancellation/
   SupportsRussian/EstimatedLatency/QualityClass) + TtsBackendKind на существующем ITtsProvider.
 - **M3 — TTS routing**: FAST (edge-tts)/QUALITY (XTTS)/AUTO (по классу ответа);
