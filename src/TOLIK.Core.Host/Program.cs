@@ -1769,6 +1769,143 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
     return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
 });
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+{
+    // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
+    // chunks → TTS per-sentence → audio events as they arrive. The client plays
+    // chunk-by-chunk. The intent path returns the same JSON as /voice/turn (the client
+    // detects the Content-Type); the non-streaming /voice/turn stays the fallback.
+    var header = context.Request.Headers.Authorization.ToString();
+    var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
+    if (principal is null) return AuthenticationRequired(context);
+    if (request.Audio is null || request.Audio.Length == 0) return Results.BadRequest(new { error = "audio_required" });
+
+    // 1. STT — the same as /voice/turn.
+    SttResult transcription;
+    try
+    {
+        transcription = await stt.TranscribeAsync(request.Audio, cancellationToken);
+    }
+    catch (ArgumentException)
+    {
+        return Results.BadRequest(new { error = "invalid_audio" });
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Problem("Transcription failed: " + ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+    if (string.IsNullOrWhiteSpace(transcription.Text))
+        return Results.Ok(new VoiceTurnResponse("(пауза)", "Я ничего не услышал — повтори, пожалуйста.", VoiceMode.Normal, null, null, transcription.Model));
+
+    // Speaker check (§13): the same as /voice/turn.
+    var speakerProfiles = await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken);
+    var hasSpeakerProfile = speakerProfiles.Count > 0;
+    var speakerVerified = false;
+    var speakerConfidence = 0.0;
+    if (hasSpeakerProfile)
+    {
+        var turnEmbedding = await EmbedSpeakerAudioAsync(request.Audio, "turn.wav", configuration, context.RequestServices, cancellationToken);
+        if (turnEmbedding is not null && turnEmbedding.Count > 0)
+        {
+            try
+            {
+                using var document = System.Text.Json.JsonDocument.Parse(speakerProfiles[0].Content);
+                var referenceVector = document.RootElement.GetProperty("embedding").EnumerateArray().Select(e => e.GetDouble()).ToList();
+                speakerConfidence = SpeakerVerifier.Cosine(referenceVector, turnEmbedding);
+                speakerVerified = SpeakerVerifier.Accept(speakerConfidence);
+            }
+            catch (ArgumentException) { /* corrupt profile or mismatch: stays unverified */ }
+        }
+        await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
+    }
+
+    // Memory: store what the user said.
+    var userSource = hasSpeakerProfile && !speakerVerified ? "voice.user.unverified" : "voice.user";
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь (voice): {transcription.Text}", userSource, 1, cancellationToken);
+
+    // Intents: the same deterministic handling as /voice/turn (the JSON response).
+    var intent = IntentRouter.Classify(transcription.Text);
+    if (intent.Kind is ChatIntentKind.OpenApp or ChatIntentKind.SwitchVoiceMode or ChatIntentKind.Reminder
+        or ChatIntentKind.StoreMemory or ChatIntentKind.StoreFamilyMeme or ChatIntentKind.StoreFunny
+        or ChatIntentKind.RecallMemory)
+    {
+        var voiceChat = await ProcessSimpleIntentAsync(principal, intent, context, durableMemory, cancellationToken);
+        if (voiceChat is not null) return voiceChat;
+    }
+
+    var voiceKind = TOLIK.Infrastructure.Models.ChatModelSelector.Pick(transcription.Text);
+    // Remembered ask-policy preference (per user) overrides the coding-kind default.
+    var route = router.ResolveWithFallback(voiceKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
+    if (route is null) return Results.Problem("No model route configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    var memories = await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
+    var prompt = MemoryContextBuilder.BuildVoice(transcription.Text, memories);
+    var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
+    prompt = MemoryContextBuilder.AppendRules(prompt, learned);
+    prompt = MemoryContextBuilder.AppendPersona(prompt,
+        await personalStore.GetPersonalityAsync(principal.UserId, cancellationToken),
+        [], [],
+        concise: true);
+    prompt = MemoryContextBuilder.AppendSpeakerContext(prompt, hasSpeakerProfile, speakerVerified, speakerConfidence);
+    var modelRequest = new ModelRequest(route.Model, prompt,
+        NumPredict: voiceKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? 250 : null,
+        Think: voiceKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? false : null,
+        NumCtx: voiceKind == TOLIK.Infrastructure.Models.ModelTaskKind.Simple ? 8192 : null);
+    var runtimeState = context.RequestServices.GetRequiredService<VoiceRuntimeState>();
+    var effectiveMode = request.RuntimeMode == VoiceRuntimeMode.Normal && runtimeState.Current != VoiceRuntimeMode.Normal
+        ? runtimeState.Current
+        : request.RuntimeMode;
+
+    async Task WriteTurnStreamAsync(System.IO.Stream stream, CancellationToken ct)
+    {
+        async Task WriteSseAsync(string json)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes($"data: {json}\n\n");
+            await stream.WriteAsync(bytes, ct);
+            await stream.FlushAsync(ct);
+        }
+        var chunker = new SentenceChunker.StreamingChunker();
+        var fullText = new System.Text.StringBuilder();
+        try
+        {
+            await foreach (var delta in completion.CompleteStreamAsync(route, modelRequest, TimeSpan.FromSeconds(120), ct))
+            {
+                fullText.Append(delta);
+                await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "delta", text = delta }));
+                // Sentence boundary → TTS per-sentence (sanitized: instructions never spoken).
+                foreach (var sentence in chunker.Feed(delta))
+                {
+                    var clean = ModelResponseSanitizer.Sanitize(sentence);
+                    if (string.IsNullOrWhiteSpace(clean.Text)) continue;
+                    var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(clean.Text, profile, VoiceMode.Normal), effectiveMode, ct);
+                    if (chunkAudio is not null)
+                        await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "audio", audio = Convert.ToBase64String(chunkAudio.Data) }));
+                }
+            }
+            foreach (var tail in chunker.Flush())
+            {
+                var clean = ModelResponseSanitizer.Sanitize(tail);
+                if (string.IsNullOrWhiteSpace(clean.Text)) continue;
+                var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(clean.Text, profile, VoiceMode.Normal), effectiveMode, ct);
+                if (chunkAudio is not null)
+                    await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "audio", audio = Convert.ToBase64String(chunkAudio.Data) }));
+            }
+            var sanitized = ModelResponseSanitizer.Sanitize(fullText.ToString());
+            await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {sanitized.Text}", "voice.assistant", 0.8, ct);
+            await WriteSseAsync("{\"type\":\"done\"}");
+        }
+        catch (ModelProviderUnavailableException)
+        {
+            await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "error", error = "model_unavailable" }));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* the client aborted (barge-in) — the stream just ends */ }
+    }
+    // SSE written directly to the response body (the Results.Stream Func overload is
+    // not available in this ASP.NET version's Results surface).
+    context.Response.ContentType = "text/event-stream";
+    await WriteTurnStreamAsync(context.Response.Body, context.RequestAborted);
+    return Results.Empty;
+});
 app.MapPost("/voice/speaker/enroll", async (HttpContext context, IdentityService identity, IConfiguration configuration, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     // Owner voice enrollment (§13): sample -> voice-service embedding -> private
