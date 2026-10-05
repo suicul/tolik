@@ -70,6 +70,17 @@ then autonomy inside allowlisted dirs.
 Vision/screen understanding (zero), Android client (zero, Kotlin),
 desktop tray (part of Track 3), expires_at, owner notifications channel.
 
+## Track 7 — VR client (Meta Quest 3S, approved 05.10.2026) 🔲 strategy done, implementation after Desktop Phase 1
+Strategy: **docs/VR.md** (решения владельца, архитектура, фазы VR0-VR6). Thin-клиент:
+passthrough + объёмный интерактивный цефалон (3D, продолжение дизайн-системы Desktop) +
+виртуальный монитор (стрим окна OpenCode с ПК, цель <100ms LAN) + встроенная
+проекционная клавиатура шлема. Паринг по QR разово: plugin-мост OpenCode → Core →
+шлем (шлем подключается ТОЛЬКО к Core, QR выдаёт Core; авторизация/ревокация в Core;
+device identity §10/§11). Стек: Unity + Meta XR SDK (C# — совпадает со стеком TOLIK).
+Фазы VR0(recon)/VR1(паринг)/VR2(цефон 3D)/VR3(монитор)/VR4(ввод)/VR5(голос)/VR6(polish)
+— после Desktop M9-M13. Смарт-очки (Ray-Ban Meta Display: Web Apps через QR +
+Wearables Toolkit 1.0; Xiaomi — research): docs/VR.md §8, после VR-трека.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
