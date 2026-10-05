@@ -128,7 +128,16 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   (audio=1, delta=64, без done vs полный delta=250/audio≈12/done=1) — LLM+TTS
   остановлены. 5 тестов реестра (cancel/no-turn/complete/barge-in/кросс-юзер
   независимость §7); 271/271 green. VAD-детекция речи во время playback → M6.
-- **M6 — live VAD (Silero)**: threshold/min-speech/silence/pre/post-roll — TOLIK_VAD_* конфиг.
+- **M6 — live VAD (Silero)** — **DONE 05.10.2026, verified live** (services/voice/server.py /vad/detect):
+  Silero через уже установленный faster-whisper 1.2.1 (get_speech_timestamps +
+  VadOptions) — без новых зависимостей. Аудио → 16kHz mono float32 (decode_audio) →
+  сегменты речи в ms с pre/post-roll (TOLIK_VAD_PREROLL_MS/TOLIK_VAD_POSTROLL_MS,
+  отдельные границы, speech_pad_ms=0 — без двойного пэддинга). TOLIK_VAD_* конфиг:
+  THRESHOLD (0.5) / MIN_SPEECH_MS (250) / MIN_SILENCE_MS (100) / PREROLL_MS (0) /
+  POSTROLL_MS (0). Фундамент для barge-in (речь во время playback) и STT pre-filter.
+  Live-замеры: речь (4s wav) → hasSpeech=true, speechMs=2816, segments=[384→3200ms],
+  латентность **122ms**; тишина (2s) → hasSpeech=false, **24ms**. Синтетический шум →
+  нет сегментов (Silero отличает речь от шума). Audio не хранится (privacy §50).
 - **M7 — telemetry + prewarm**: VoiceTurnTelemetry (turn_start/vad/stt/llm/tts/playback
   тайминги, без приватного текста) + prewarm (edge-tts прогрев, XTTS warm) + cold/warm TTFA.
 - **M8 — modes/game mute**: SILENT в VoiceRuntimePolicy + игра→mute связка.

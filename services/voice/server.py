@@ -19,7 +19,7 @@ import logging
 import os
 import tempfile
 import time
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
@@ -198,6 +198,86 @@ async def transcribe(file: UploadFile = File(...), language: str = Form("ru")):
         durationSeconds=duration,
         model=_state["stt_name"] or "unknown",
     )
+
+
+class VadSegment(BaseModel):
+    startMs: int
+    endMs: int
+
+
+class VadResult(BaseModel):
+    hasSpeech: bool
+    speechMs: int
+    segments: List[VadSegment]
+
+
+# TOLIK_VAD_* (voice-runtime-v2.md M6): Silero VAD parameters, configurable without
+# code changes. Defaults follow Silero/faster-whisper (threshold 0.5, min speech 250ms,
+# min silence 100ms); pre/post-roll default 0 (no boundary extension). speech_pad_ms
+# stays 0: pre- and post-roll are applied separately (independent boundaries), never
+# double-padded.
+def _vad_options():
+    from faster_whisper.vad import VadOptions  # type: ignore
+
+    return VadOptions(
+        threshold=float(os.environ.get("TOLIK_VAD_THRESHOLD", "0.5")),
+        min_speech_duration_ms=int(os.environ.get("TOLIK_VAD_MIN_SPEECH_MS", "250")),
+        min_silence_duration_ms=int(os.environ.get("TOLIK_VAD_MIN_SILENCE_MS", "100")),
+        speech_pad_ms=0,
+    )
+
+
+def _vad_preroll_ms() -> int:
+    return int(os.environ.get("TOLIK_VAD_PREROLL_MS", "0"))
+
+
+def _vad_postroll_ms() -> int:
+    return int(os.environ.get("TOLIK_VAD_POSTROLL_MS", "0"))
+
+
+@app.post("/vad/detect", response_model=VadResult)
+async def vad_detect(file: UploadFile = File(...)):
+    """Live VAD (voice-runtime-v2.md M6): Silero via faster-whisper's bundled model —
+    no new dependency. Detects speech segments BEFORE transcription: the foundation for
+    barge-in (speech during playback) and the STT pre-filter. Audio is decoded to 16kHz
+    mono float32; the result carries segment boundaries in ms with pre/post-roll applied.
+    Nothing persists: audio never stored (privacy §50)."""
+    engine, _model = _state["stt"] if _state["stt"] else (None, None)
+    if engine != "faster-whisper":
+        raise HTTPException(status_code=503, detail="vad_requires_faster_whisper")
+    audio_bytes = await file.read()
+    if len(audio_bytes) == 0:
+        raise HTTPException(status_code=400, detail="empty_audio")
+
+    started = time.time()
+    suffix = os.path.splitext(file.filename or "audio.wav")[1] or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp:
+        temp.write(audio_bytes)
+        temp_path = temp.name
+    try:
+        from faster_whisper.audio import decode_audio  # type: ignore
+        from faster_whisper.vad import get_speech_timestamps  # type: ignore
+
+        audio = decode_audio(temp_path, sampling_rate=16000)
+    finally:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    timestamps = get_speech_timestamps(audio, _vad_options(), sampling_rate=16000)
+    duration_samples = len(audio)
+    # ms -> samples @16kHz: samples * 1000 / sr = samples / 16.
+    preroll = _vad_preroll_ms() * 16
+    postroll = _vad_postroll_ms() * 16
+    segments: List[VadSegment] = []
+    for t in timestamps:
+        start = max(0, int(t["start"]) - preroll)
+        end = min(duration_samples, int(t["end"]) + postroll)
+        segments.append(VadSegment(startMs=start // 16, endMs=end // 16))
+    speech_ms = sum(s.endMs - s.startMs for s in segments)
+    log.info("VAD %d bytes in %.2fs -> %d segments, %d ms speech", len(audio_bytes), time.time() - started, len(segments), speech_ms)
+    return VadResult(hasSpeech=len(segments) > 0, speechMs=speech_ms, segments=segments)
 
 
 @app.post("/tts/synthesize-stream")
