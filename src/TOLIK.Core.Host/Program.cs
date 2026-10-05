@@ -2139,6 +2139,16 @@ app.MapGet("/agents/ws", async context =>
     // responses must be sealed frames (verified + nonce replay-guarded).
     var peerKeys = context.RequestServices.GetRequiredService<TOLIK.Contracts.Transport.PeerRegistry>();
     var frameNonces = context.RequestServices.GetRequiredService<TOLIK.Contracts.Transport.NonceStore>();
+    // Game mute linkage (voice-runtime-v2.md M8): the heartbeat carries the foreground
+    // process name; a match against TOLIK_GAME_PROCESSES auto-switches Normal ->
+    // GamingAssist (listen, assist, never speak into the game) and back. Manual modes
+    // are never overridden by detection. The process name is perception data, not
+    // authority: it only shifts the voice mode, never an authorization decision.
+    var runtimeState = context.RequestServices.GetRequiredService<VoiceRuntimeState>();
+    var gameMuteLogger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("AgentGameMute");
+    var gameProcesses = (context.RequestServices.GetRequiredService<IConfiguration>()["TOLIK_GAME_PROCESSES"] ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
     var wsAgentId = registry.GetAgentIdForConnection(connectionId);
     var pinnedKid = wsAgentId is { } aidValue && peerKeys.Resolve(aidValue.ToString("D")) is not null
         ? aidValue.ToString("D")
@@ -2215,6 +2225,16 @@ app.MapGet("/agents/ws", async context =>
                         else if (msgType == "pong" || msgType == "heartbeat")
                         {
                             registry.TouchWebSocket(connectionId, principal.UserId);
+                            // M8: the foreground process name rides on the heartbeat; a
+                            // match against the configured game list auto-switches the
+                            // voice runtime mode. A missing name = no game.
+                            if (msgType == "heartbeat" && gameProcesses.Count > 0
+                                && effectiveRoot.TryGetProperty("foreground", out var foregroundProp))
+                            {
+                                var gameRunning = gameProcesses.Contains(foregroundProp.GetString() ?? string.Empty);
+                                if (runtimeState.ApplyGamePresence(gameRunning))
+                                    gameMuteLogger.LogInformation("Voice runtime mode auto-switched to {Mode} ({Reason})", runtimeState.Current, runtimeState.ChangedReason);
+                            }
                         }
                     }
                     catch { }

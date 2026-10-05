@@ -2,7 +2,9 @@
 using System.Diagnostics;
 using System.ComponentModel;
 using System.Net.Http.Json;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Net.WebSockets;
 using System.Threading.Channels;
 using TOLIK.Contracts;
@@ -15,6 +17,23 @@ namespace TOLIK.Agent;
 /// </summary>
 public sealed class WindowsAgent
 {
+    // Foreground process detection (voice-runtime-v2.md M8): the name rides along on
+    // the WS heartbeat; Core matches it against TOLIK_GAME_PROCESSES for the game
+    // mute linkage. READ_ONLY perception — no keystrokes, no window content.
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+
+    internal static string? GetForegroundProcessName()
+    {
+        var hwnd = GetForegroundWindow();
+        if (hwnd == IntPtr.Zero) return null;
+        GetWindowThreadProcessId(hwnd, out var pid);
+        try { return Process.GetProcessById((int)pid).ProcessName; }
+        catch { return null; } // process exited between the call and the lookup
+    }
+
     private readonly HttpClient _httpClient;
     private readonly string _agentId;
     private readonly string _registrationToken;
@@ -206,8 +225,12 @@ public sealed class WindowsAgent
                 {
                     try
                     {
-                        var heartbeat = System.Text.Encoding.UTF8.GetBytes("{\"type\":\"heartbeat\"}");
-                        await SendWsTextAsync(heartbeat, CancellationToken.None);
+                        // The foreground process name rides along (M8 game mute linkage):
+                        // null when unavailable (lock screen, elevated window) — Core
+                        // treats a missing name as "no game".
+                        var foreground = GetForegroundProcessName();
+                        var payload = JsonSerializer.Serialize(new { type = "heartbeat", foreground });
+                        await SendWsTextAsync(System.Text.Encoding.UTF8.GetBytes(payload), CancellationToken.None);
                     }
                     catch (Exception ex)
                     {

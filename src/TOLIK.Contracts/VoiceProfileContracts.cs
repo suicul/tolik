@@ -1,6 +1,6 @@
 namespace TOLIK.Contracts;
 
-public enum VoiceRuntimeMode { Normal, Gaming, GamingAssist, Night }
+public enum VoiceRuntimeMode { Normal, Gaming, GamingAssist, Night, Silent }
 public sealed record VoiceProfile(
     string Name,
     string Language,
@@ -29,6 +29,9 @@ public sealed record VoiceRuntimePolicy(
         VoiceRuntimeMode.Gaming => new(false, false, false, false, TtsRoutingPreference.Fast),
         VoiceRuntimeMode.GamingAssist => new(true, false, false, true, TtsRoutingPreference.Fast),
         VoiceRuntimeMode.Night => new(true, true, false, false, TtsRoutingPreference.Fast),
+        // Silent (voice-runtime-v2.md M8): TOLIK listens and answers as text, never
+        // speaks — the manual mute (also the auto game-mute target when configured).
+        VoiceRuntimeMode.Silent => new(true, false, false, false, TtsRoutingPreference.Fast),
         _ => new(true, true, true, false, TtsRoutingPreference.Auto)
     };
 }

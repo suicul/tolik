@@ -94,6 +94,10 @@ public static partial class IntentRouter
 
         if (text.Contains("ночной режим", StringComparison.OrdinalIgnoreCase) || text.Equals("ночь", StringComparison.OrdinalIgnoreCase))
             return new(ChatIntentKind.SwitchVoiceMode, "Night");
+        // Silent (voice-runtime-v2.md M8): the manual mute — TOLIK listens, answers
+        // as text, never speaks.
+        if (text.Contains("тихий режим", StringComparison.OrdinalIgnoreCase) || text.Contains("тишина", StringComparison.OrdinalIgnoreCase) || text.Equals("молчи", StringComparison.OrdinalIgnoreCase))
+            return new(ChatIntentKind.SwitchVoiceMode, "Silent");
         if (text.Contains("игровой режим", StringComparison.OrdinalIgnoreCase))
             return new(ChatIntentKind.SwitchVoiceMode, "Gaming");
         if (text.Contains("режим", StringComparison.OrdinalIgnoreCase) && text.Contains("обычн", StringComparison.OrdinalIgnoreCase))
@@ -129,9 +133,17 @@ public static partial class IntentRouter
         if (!text.Contains(' ', StringComparison.Ordinal) && IsSmalltalk(text))
             return text;
 
+        // Single-word mode commands ("ночь", "молчи", "тишина") stay literal — they
+        // must hit the SwitchVoiceMode patterns, never the implied app open
+        // (latent bug this fixes: "ночь" became "открой ночь" and matched OpenApp,
+        // so the documented Night alias was unreachable through Classify).
+        if (!text.Contains(' ', StringComparison.Ordinal) &&
+            text.ToLowerInvariant() is "ночь" or "молчи" or "тишина")
+            return text;
+
         // If the text is a single word (no spaces) and doesn't match any intent,
         // treat it as an implied "открой <app>" command for voice convenience.
-        if (!text.Contains(' ', StringComparison.Ordinal) && 
+        if (!text.Contains(' ', StringComparison.Ordinal) &&
             !OpenAppRegex().IsMatch(text) &&
             !ReminderRegex().IsMatch(text) &&
             !RecallRegex().IsMatch(text) &&
