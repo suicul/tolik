@@ -138,8 +138,20 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   Live-замеры: речь (4s wav) → hasSpeech=true, speechMs=2816, segments=[384→3200ms],
   латентность **122ms**; тишина (2s) → hasSpeech=false, **24ms**. Синтетический шум →
   нет сегментов (Silero отличает речь от шума). Audio не хранится (privacy §50).
-- **M7 — telemetry + prewarm**: VoiceTurnTelemetry (turn_start/vad/stt/llm/tts/playback
-  тайминги, без приватного текста) + prewarm (edge-tts прогрев, XTTS warm) + cold/warm TTFA.
+- **M7 — telemetry + prewarm** — **DONE 05.10.2026, verified live** (commit 619a45f):
+  VoiceTurnTelemetry (Core): per-turn стадии как structured events — turn_id, stage,
+  elapsed_ms, outcome. НИКАКОГО приватного текста (§38) — только фиксированные литералы
+  стадий и тайминги. Стадии: turn_start/stt_done/speaker_done/llm_first_delta/
+  tts_first_audio + Complete(done|error|cancelled); cold/warm TTFA теперь измеримы из
+  логов автоматически. Prewarm: ModelPrewarmService (core) — LLM ping на старте
+  (NumPredict 1, литерал «ping», keep_alive держит тёплой) + TTS warm-up (voice service,
+  короткая фраза через цепочку; edge-tts тратит ~1 запрос rate-бюджета на старте — ок).
+  Live-замеры (первый turn после рестарта, раньше = cold 9.6s TTFT):
+  Model prewarm done 4303ms (qwen3:4b) на старте; TTS warm-up 88652 bytes;
+  первый turn: TTFT **3675ms** (было 9602ms), TTFA 7414ms; профиль:
+  stt 478ms → speaker 313ms → llm+память 2805ms → предложение+TTS 3740ms.
+  Playback-стадия — на клиенте (Desktop/VR), сервер не измеряет. 2 теста телеметрии;
+  273/273 green.
 - **M8 — modes/game mute**: SILENT в VoiceRuntimePolicy + игра→mute связка.
 - **0.9/0.10**: wake-word boundary (IWakeWordDetector, режимы always/wake/PTT — без фейка) +
   direct mic path (NAudio → VAD → STT, отдельный VoiceCaptureService).
