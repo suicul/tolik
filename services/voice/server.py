@@ -648,6 +648,17 @@ def main():
     except Exception as ex:  # noqa: BLE001 — warm-up must never block startup
         log.warning("Whisper warm-up skipped: %s", ex)
 
+    # TTS warm-up (voice-runtime-v2.md M7): the first real synthesis after a cold start
+    # pays chain/backend init (~1.6-2s measured on the chain); pre-running a short
+    # phrase moves that cost out of the user's first request. edge-tts consumes ~1
+    # request of its rate budget at startup — acceptable (startup, not a user turn).
+    # Never blocks startup or disables TTS on failure.
+    try:
+        warmed = synthesize(TtsRequest(text="Толик на связи.", engine="auto"))
+        log.info("TTS warm-up complete: %d bytes.", len(warmed.body))
+    except Exception as ex:  # noqa: BLE001 — warm-up must never block startup
+        log.warning("TTS warm-up skipped: %s", ex)
+
     import uvicorn
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

@@ -61,6 +61,8 @@ builder.Services.AddHostedService<DailyReviewBackgroundService>();
 builder.Services.AddHostedService<BackupSchedulerBackgroundService>();
 builder.Services.AddSingleton<VoiceRuntimeState>();
 builder.Services.AddSingleton<VoiceTurnRegistry>();
+builder.Services.AddTransient<VoiceTurnTelemetry>();
+builder.Services.AddHostedService<ModelPrewarmService>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
@@ -1770,7 +1772,7 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
     return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
 });
-app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
     // chunks → TTS per-sentence → audio events as they arrive. The client plays
@@ -1779,6 +1781,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
     if (principal is null) return AuthenticationRequired(context);
+    telemetry.Mark("turn_start");
     if (request.Audio is null || request.Audio.Length == 0) return Results.BadRequest(new { error = "audio_required" });
 
     // 1. STT — the same as /voice/turn.
@@ -1795,6 +1798,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     {
         return Results.Problem("Transcription failed: " + ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
+    telemetry.Mark("stt_done");
     if (string.IsNullOrWhiteSpace(transcription.Text))
         return Results.Ok(new VoiceTurnResponse("(пауза)", "Я ничего не услышал — повтори, пожалуйста.", VoiceMode.Normal, null, null, transcription.Model));
 
@@ -1819,6 +1823,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
         }
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
+    telemetry.Mark("speaker_done");
 
     // Memory: store what the user said.
     var userSource = hasSpeakerProfile && !speakerVerified ? "voice.user.unverified" : "voice.user";
@@ -1867,11 +1872,18 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
         }
         var chunker = new SentenceChunker.StreamingChunker();
         var fullText = new System.Text.StringBuilder();
+        var firstDeltaMarked = false;
+        var firstAudioMarked = false;
         try
         {
             await foreach (var delta in completion.CompleteStreamAsync(route, modelRequest, TimeSpan.FromSeconds(120), ct))
             {
                 fullText.Append(delta);
+                if (!firstDeltaMarked)
+                {
+                    telemetry.Mark("llm_first_delta");
+                    firstDeltaMarked = true;
+                }
                 await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "delta", text = delta }));
                 // Sentence boundary → TTS per-sentence (sanitized: instructions never spoken).
                 foreach (var sentence in chunker.Feed(delta))
@@ -1880,7 +1892,14 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
                     if (string.IsNullOrWhiteSpace(clean.Text)) continue;
                     var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(clean.Text, profile, VoiceMode.Normal), effectiveMode, ct);
                     if (chunkAudio is not null)
+                    {
+                        if (!firstAudioMarked)
+                        {
+                            telemetry.Mark("tts_first_audio");
+                            firstAudioMarked = true;
+                        }
                         await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "audio", audio = Convert.ToBase64String(chunkAudio.Data) }));
+                    }
                 }
             }
             foreach (var tail in chunker.Flush())
@@ -1894,12 +1913,17 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
             var sanitized = ModelResponseSanitizer.Sanitize(fullText.ToString());
             await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {sanitized.Text}", "voice.assistant", 0.8, ct);
             await WriteSseAsync("{\"type\":\"done\"}");
+            telemetry.Complete("done");
         }
         catch (ModelProviderUnavailableException)
         {
+            telemetry.Complete("error");
             await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "error", error = "model_unavailable" }));
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested) { /* the client aborted (barge-in) — the stream just ends */ }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            telemetry.Complete("cancelled");
+        }
     }
     // Barge-in (M5): register the in-flight turn — auto-cancels the previous turn for
     // this user (the user speaks again). The client abort and POST /voice/cancel both

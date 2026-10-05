@@ -7,6 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.4" />
     <ProjectReference Include="..\TOLIK.Contracts\TOLIK.Contracts.csproj" />
     <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.4" />
   </ItemGroup>
