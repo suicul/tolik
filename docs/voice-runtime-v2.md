@@ -152,7 +152,26 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   stt 478ms → speaker 313ms → llm+память 2805ms → предложение+TTS 3740ms.
   Playback-стадия — на клиенте (Desktop/VR), сервер не измеряет. 2 теста телеметрии;
   273/273 green.
-- **M8 — modes/game mute**: SILENT в VoiceRuntimePolicy + игра→mute связка.
+- **M8 — modes/game mute** — **DONE 06.10.2026, verified live** (commit 4f8d411):
+  VoiceRuntimeMode.Silent: TOLIK слушает и отвечает текстом, никогда не говорит
+  (Stt on, Tts off); алиасы silent/тихий/тихо/тишина/молчи; IntentRouter: «тихий
+  режим»/«молчи»/«тишина» → SwitchVoiceMode Silent. Game mute связка: heartbeat
+  агента несёт имя foreground-процесса (GetForegroundWindow P/Invoke, READ_ONLY
+  perception); Core матчит TOLIK_GAME_PROCESSES (case-insensitive, запятая) →
+  VoiceRuntimeState.ApplyGamePresence: Normal ⇄ GamingAssist (слушать, ассистировать,
+  не говорить в игру) и обратно; ручные режимы (Night/Silent/Gaming/ручной
+  GamingAssist) НИКОГДА не переопределяются; ручной switch отменяет auto-связь.
+  Имя процесса — perception, не authority (только голосовой режим, никогда
+  авторизация); логируются переключения, не foreground.
+  Live-верификация: TOLIK_GAME_PROCESSES=OpenCode → heartbeat `{"foreground":"OpenCode"}`
+  (агент, каждые 10s, sent ✓) → **"Voice runtime mode auto-switched to GamingAssist
+  (game detected)"** в core-логах ✓. Restore — тот же путь с gameRunning=false
+  (юнит-проверен: 9 тестов авто-switch/restore/защита ручных режимов/идемпотентность);
+  live-restore срабатывает при первом уходе фокуса (проверяемо в логах).
+  Попутно чинен латентный баг: одиночные слова-команды («ночь»!) становились
+  «открой X» → OpenApp — задокументированный алиас Night был недостижим.
+  286/286 green. Настройка на live: TOLIK_GAME_PROCESSES пуст (связка выключена) —
+  владелец задаст список своих игр.
 - **0.9/0.10**: wake-word boundary (IWakeWordDetector, режимы always/wake/PTT — без фейка) +
   direct mic path (NAudio → VAD → STT, отдельный VoiceCaptureService).
 - **0.11/0.12**: VoiceResponseClass (ACK/SHORT/NORMAL/DETAILED/... — длина/TTS/streaming/interrupt)

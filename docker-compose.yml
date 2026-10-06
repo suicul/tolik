@@ -72,6 +72,10 @@ services:
       TOLIK_DEV_AUTO_TOKEN: ${TOLIK_DEV_AUTO_TOKEN:-false}
       TOLIK_ALLOWED_ROOTS: ${TOLIK_ALLOWED_ROOTS:-}
       TOLIK_OFFLINE_MODE: ${TOLIK_OFFLINE_MODE:-true}
+      # Game mute linkage (docs/voice-runtime-v2.md M8): comma-separated process
+      # names (case-insensitive) that auto-switch the voice runtime mode to
+      # GamingAssist while foreground. Empty = the linkage is off.
+      TOLIK_GAME_PROCESSES: ${TOLIK_GAME_PROCESSES:-}
       TOLIK_SESSION_LIFETIME_HOURS: ${TOLIK_SESSION_LIFETIME_HOURS:-168}
       TOLIK_STT__Endpoint: ${TOLIK_STT_ENDPOINT:-http://voice:9660}
       TOLIK_VOICE__COSYVOICE_ENDPOINT: ${TOLIK_COSYVOICE_ENDPOINT:-http://voice:9660}
