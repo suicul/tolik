@@ -41,6 +41,36 @@ public sealed record TtsAudio(byte[] Data, string ContentType, TimeSpan Duration
 /// <summary>Streaming TTS chunk (docs/voice-runtime-v2.md 0.5/M4): a piece of audio served
 /// as it arrives; IsFinal marks the stream end. The non-streaming TtsAudio stays the fallback.</summary>
 public sealed record TtsChunk(byte[] Data, bool IsFinal);
+
+/// <summary>
+/// Voice activation modes (voice-runtime-v2.md 0.9): how the mic opens a turn.
+/// Client-side capture policy — Core stays the authority; a mode only decides when
+/// local audio becomes a turn request.
+/// </summary>
+public enum VoiceActivationMode
+{
+    /// <summary>Mic listens continuously; VAD segments the utterances. Honest: no wake word claimed.</summary>
+    Always,
+    /// <summary>Requires a REAL configured wake-word detector. Without one, resolution falls back to Always with an explicit log — never a pretended detection.</summary>
+    Wake,
+    /// <summary>Push-to-talk: the client's hotkey gates the capture window.</summary>
+    PushToTalk
+}
+
+/// <summary>
+/// Wake-word detection boundary (voice-runtime-v2.md 0.9). NO FAKE: an implementation
+/// must really detect the wake word (openWakeWord / similar later); when no detector
+/// is configured, IsConfigured stays false and Wake mode falls back to Always with a
+/// visible log. Runs on the CLIENT (agent/desktop): raw audio in, wake events out.
+/// </summary>
+public interface IWakeWordDetector : IDisposable
+{
+    /// <summary>True only when a real detector is configured and loaded.</summary>
+    bool IsConfigured { get; }
+
+    /// <summary>Feeds raw 16 kHz mono 16-bit PCM; true when the wake word is detected in this buffer.</summary>
+    bool Process(ReadOnlySpan<byte> pcm16kMono);
+}
 public interface ITtsProvider
 {
     /// <summary>Backend capability declaration (docs/voice-runtime-v2.md M2/M1): declarative, benchmark-backed.</summary>
