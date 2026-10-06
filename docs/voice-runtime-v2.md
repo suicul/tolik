@@ -174,6 +174,32 @@ HTTP 200 audio → КЛИЕНТ играет (браузер <audio> / CLI; NAud
   владелец задаст список своих игр.
 - **0.9/0.10**: wake-word boundary (IWakeWordDetector, режимы always/wake/PTT — без фейка) +
   direct mic path (NAudio → VAD → STT, отдельный VoiceCaptureService).
+- **0.9/0.10 — wake-word boundary + direct mic path** — **DONE 06.10.2026, verified live** (commits f89494a + 1d23299):
+  0.9 (без фейка): VoiceActivationMode (Always/Wake/PushToTalk) + IWakeWordDetector
+  (Contracts, dependency-free); резолвер: Wake без реального детектора → честный
+  fallback в Always с видимым логом; PTT требует hotkey (Desktop).
+  0.10: UtteranceSegmenter (Contracts, чистая логика: pre-roll 250ms, end-silence
+  700ms, hard cap 10s) + VoiceCaptureService (агент): NAudio WaveInEvent →
+  voice-service /vad/detect (M6) → сегментация → /voice/turn-stream SSE →
+  текст в консоль + NAudio playback (WAV/MP3).
+  **Live-фиксы от_owner-теста (Behringer UMC204HD + B2 Pro, вход 1):**
+  - Дефолтное WaveIn-устройство была виртуалка «Steam Streaming Micro» (тишина!) →
+    --voice-device N + печать списка устройств на старте. ASIO не нужен — winmm
+    через стандартные эндпоинты UMC204HD работает (VAD-хит доказан).
+  - Двухканальные интерфейсы требуют STEREO-захват + mixdown (L+R)/2: mono слышит
+    только канал 1; probe 48k stereo → 44.1k → 16k mono; nearest-neighbor декимация.
+  - NAudio StopRecording асинхронный: probe на одном инстансе + переиспользование =
+    «Already recording» → probe одноразовый, боевой capture — свежий инстанс.
+  - Эхо-цикл (TOLIK сам с собой говорил, живой отчёт владельца): пер-чанковый гейт
+    пропускал TTS между предложениями → гейт на ВЕСЬ turn + хвост 400ms; verified:
+    0 ложных VAD-хитов после ответа.
+  - «Озвучивает все мысли» (отчёт владельца): MaxSpokenSentences=3 озвучивается,
+    остальное — текстом.
+  - ESC = barge-in: /voice/cancel (M5) + стоп playback; голосовой barge-in во время
+    речи TOLIK требует AEC — честное ограничение, без фейка.
+  - UTF-8 консоль. E2E verified live: колонки → мик Behringer → VAD (320ms) →
+    utterance → turn → 3 предложения голосом + остальное текстом → тишина. 17 тестов
+    (сегментация/резолвер); 303/303 green.
 - **0.11/0.12**: VoiceResponseClass (ACK/SHORT/NORMAL/DETAILED/... — длина/TTS/streaming/interrupt)
   + voice LLM policy дозачистка (markdown/JSON в голос не попадают).
 - **Phase 1 (M9-M13) — Desktop cephalon**: clients/TOLIK.Desktop (WPF) поверх стабильного
