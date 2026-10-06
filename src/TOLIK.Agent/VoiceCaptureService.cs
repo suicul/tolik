@@ -107,7 +107,8 @@ public sealed class VoiceCaptureService : IDisposable
                     // Console barge-in: ESC interrupts TOLIK — cancels the in-flight turn
                     // through Core (M5 /voice/cancel) and stops the playback. Voice
                     // barge-in while TOLIK speaks needs AEC — honest limitation, no fake.
-                    if (Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Escape)
+                    // Hidden/redirected runs (no interactive console) simply have no ESC.
+                    if (EscPressed())
                     {
                         Console.WriteLine("[VOICE] interrupt (ESC)");
                         await InterruptAsync(cancellationToken);
@@ -186,6 +187,21 @@ public sealed class VoiceCaptureService : IDisposable
             position += step;
         }
         return result;
+    }
+
+    /// <summary>ESC pressed on an INTERACTIVE console. Hidden/redirected runs (the
+    /// detached agent, service mode) have no console keys — returns false instead of
+    /// crashing (Console.KeyAvailable throws on redirected input, observed live).</summary>
+    private static bool EscPressed()
+    {
+        try
+        {
+            return !Console.IsInputRedirected && Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Escape;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     private void StopRecording()
