@@ -42,6 +42,23 @@ lifecycle_state    LIFETIME (persisted, see lifecycle.md)
 owner_identity     user id bound at ceremony
 ```
 
+## Genesis Phase 2: Owner Voice Enrollment (planned — docs/voice-identity.md §4)
+
+The ceremony is NOT complete until the owner's canonical speaker profile exists:
+
+```text
+Ceremony (identity + audit chain)
+→ 5 phonetically distinct fixed phrases (RU: шипящие/свистящие/глухие/звонкие/р-л)
+→ per-sample quality gate (VAD speechMs ≥ 2500, embedding extracted,
+  intra-set consistency ≥ 0.30)
+→ a failed phrase repeats individually (not the whole set)
+→ ≥ 4 of 5 succeed → canonical profile (speaker.profile.v2) → ceremony completes
+→ otherwise the ceremony stays in voice_enrollment_pending
+```
+
+Raw audio never persists — embeddings only (§50). Voice is an identity HINT
+(§13): it never grants authorization by itself.
+
 ## After Genesis (normative)
 
 Forbidden without the security workflow (MFA + owner presence + audit):

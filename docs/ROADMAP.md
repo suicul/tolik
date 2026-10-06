@@ -81,6 +81,16 @@ device identity §10/§11). Стек: Unity + Meta XR SDK (C# — совпада
 — после Desktop M9-M13. Смарт-очки (Ray-Ban Meta Display: Web Apps через QR +
 Wearables Toolkit 1.0; Xiaomi — research): docs/VR.md §8, после VR-трека.
 
+## Track 8 — Voice Identity: Genesis Enrollment + Adaptive Speaker Profile (approved 07.10.2026) 🔲 plan done, implementation queued
+Full plan: **docs/voice-identity.md** (12 требований владельца: canonical+adaptive
+профиль, anti-contamination tiers, bounded adaptation/decay, Genesis-фаза
+голосового enrollment'а владельца, conversational enrollment доверенных лиц
+через существующие роли, household 1:N identify, emotion-контракт без фейка,
+privacy/retention, recovery/диагностика, realtime, 20 тестов). Фазы VI-0..VI-7
+с зависимостями; VI-0 (калибровка на 985-клиповом датасете) блокирует числа
+остальных. Живые голосовые тесты — отложены до выходных владельца; реализация
+идёт автономно по unit-тестам.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
