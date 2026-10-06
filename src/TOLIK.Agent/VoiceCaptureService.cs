@@ -23,17 +23,24 @@ public sealed class VoiceCaptureService : IDisposable
     private readonly string _voiceUrl;
     private readonly string _token;
     private readonly VoiceActivationMode _activation;
+    private readonly int _deviceIndex;
     private readonly UtteranceSegmenter _segmenter = new(preRollMs: 250, endSilenceMs: 700, maxUtteranceMs: 10_000);
     private WaveInEvent? _capture;
     private volatile bool _playing;
+    private CancellationTokenSource? _turnCts;
 
-    public VoiceCaptureService(HttpClient http, string coreUrl, string voiceUrl, string token, VoiceActivationMode activation)
+    /// <summary>How many sentences are spoken aloud per reply; the rest stay text
+    /// (owner feedback live: "озвучивает все мысли" — voice replies must stay short).</summary>
+    private const int MaxSpokenSentences = 3;
+
+    public VoiceCaptureService(HttpClient http, string coreUrl, string voiceUrl, string token, VoiceActivationMode activation, int deviceIndex = 0)
     {
         _http = http;
         _coreUrl = coreUrl.TrimEnd('/');
         _voiceUrl = voiceUrl.TrimEnd('/');
         _token = token;
         _activation = activation;
+        _deviceIndex = deviceIndex;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -44,46 +51,82 @@ public sealed class VoiceCaptureService : IDisposable
         else
             Console.WriteLine($"[VOICE] activation: {effective}");
 
-        using var gate = new SemaphoreSlim(1, 1);
-        var chunkReady = new SemaphoreSlim(0, 1);
-        byte[]? pending = null;
-
-        _capture = new WaveInEvent
+        Console.WriteLine("[VOICE] input devices (--voice-device <index>):");
+        for (var i = 0; i < WaveInEvent.DeviceCount; i++)
         {
-            WaveFormat = new WaveFormat(16000, 16, 1),
-            BufferMilliseconds = 480
-        };
+            var caps = WaveInEvent.GetCapabilities(i);
+            Console.WriteLine($"[VOICE]   #{i}: {caps.ProductName} (channels {caps.Channels})");
+        }
+
+        var chunkQueue = new System.Collections.Concurrent.ConcurrentQueue<byte[]>();
+        var chunkReady = new SemaphoreSlim(0, 1);
+        var accumulator = new MemoryStream(); // 16 kHz mono PCM between chunk boundaries
+        var accumulatorLock = new object();
+
+        Console.WriteLine("[VOICE] opening capture device...");
+        var sourceFormat = ProbeFormat(_deviceIndex);
+        _capture = new WaveInEvent { DeviceNumber = _deviceIndex, WaveFormat = sourceFormat, BufferMilliseconds = 480 };
+        Console.WriteLine($"[VOICE] capture format: {sourceFormat}");
         _capture.DataAvailable += (_, e) =>
         {
-            var data = new byte[e.BytesRecorded];
-            Array.Copy(e.Buffer, data, data.Length);
-            lock (this) { pending = data; }
-            if (chunkReady.CurrentCount == 0) chunkReady.Release();
+            var mono = MixDownTo16kMono(e.Buffer, e.BytesRecorded, sourceFormat.SampleRate, sourceFormat.Channels);
+            System.Collections.Generic.List<byte[]>? ready = null;
+            lock (accumulatorLock)
+            {
+                accumulator.Write(mono, 0, mono.Length);
+                const int chunkBytes = 15360; // 480ms @ 16 kHz mono 16-bit
+                while (accumulator.Length >= chunkBytes)
+                {
+                    var chunk = new byte[chunkBytes];
+                    var rest = new byte[accumulator.Length - chunkBytes];
+                    accumulator.Position = 0;
+                    accumulator.ReadExactly(chunk);
+                    accumulator.ReadExactly(rest);
+                    accumulator.SetLength(0);
+                    accumulator.Write(rest, 0, rest.Length);
+                    (ready ??= []).Add(chunk);
+                }
+            }
+            if (ready is null) return;
+            foreach (var chunk in ready)
+            {
+                chunkQueue.Enqueue(chunk);
+                if (chunkReady.CurrentCount == 0) chunkReady.Release();
+            }
         };
         _capture.StartRecording();
-        Console.WriteLine("[VOICE] mic open (16kHz mono, 480ms chunks). Say something.");
+        Console.WriteLine($"[VOICE] mic open: device #{_deviceIndex} ({sourceFormat}) -> mixed to 16kHz mono, 480ms chunks. Say something.");
 
         try
         {
             while (!cancellationToken.IsCancellationRequested)
             {
                 await chunkReady.WaitAsync(cancellationToken);
-                byte[]? chunk;
-                lock (this) { chunk = pending; pending = null; }
-                if (chunk is null || chunk.Length == 0) continue;
+                while (chunkQueue.TryDequeue(out var chunk))
+                {
+                    // Console barge-in: ESC interrupts TOLIK — cancels the in-flight turn
+                    // through Core (M5 /voice/cancel) and stops the playback. Voice
+                    // barge-in while TOLIK speaks needs AEC — honest limitation, no fake.
+                    if (Console.KeyAvailable && Console.ReadKey(intercept: true).Key == ConsoleKey.Escape)
+                    {
+                        Console.WriteLine("[VOICE] interrupt (ESC)");
+                        await InterruptAsync(cancellationToken);
+                        continue;
+                    }
 
-                // Echo gate: while TOLIK's own reply plays, segmentation pauses —
-                // otherwise the mic hears TOLIK and answers itself forever.
-                if (_playing) continue;
+                    // Echo gate: while TOLIK's own reply plays, segmentation pauses —
+                    // otherwise the mic hears TOLIK and answers itself forever.
+                    if (_playing) continue;
 
-                var hasSpeech = await DetectSpeechAsync(chunk, cancellationToken);
-                var utterance = _segmenter.Feed(chunk, hasSpeech);
-                if (_segmenter.IsCapturing)
-                    Console.Write($"\r[VOICE] capturing... {_segmenter.IsCapturing}");
-                if (utterance is null || utterance.Length == 0) continue;
+                    var hasSpeech = await DetectSpeechAsync(chunk, cancellationToken);
+                    var utterance = _segmenter.Feed(chunk, hasSpeech);
+                    if (_segmenter.IsCapturing)
+                        Console.Write("\r[VOICE] capturing...");
+                    if (utterance is null || utterance.Length == 0) continue;
 
-                Console.WriteLine($"\r[VOICE] utterance complete ({utterance.Length / 32}ms) -> turn");
-                await TurnAsync(utterance, cancellationToken);
+                    Console.WriteLine($"\r[VOICE] utterance complete ({utterance.Length / 32}ms) -> turn");
+                    await TurnAsync(utterance, cancellationToken);
+                }
             }
         }
         finally
@@ -92,11 +135,79 @@ public sealed class VoiceCaptureService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Probes which format the device accepts: 48 kHz stereo first (USB interfaces'
+    /// native), 44.1 kHz stereo fallback, 16 kHz mono last. The probe uses a THROWAWAY
+    /// capture — StopRecording is asynchronous and leaves the instance unusable
+    /// ("Already recording" on reuse, observed live) — the caller creates a fresh
+    /// capture with the winning format. Two-input interfaces (e.g. Behringer
+    /// UMC204HD) need STEREO capture with a mixdown: a mono capture hears only
+    /// channel 1 — a mic on input 2 would record as silence.
+    /// </summary>
+    private static WaveFormat ProbeFormat(int deviceIndex)
+    {
+        foreach (var format in new[] { new WaveFormat(48000, 16, 2), new WaveFormat(44100, 16, 2), new WaveFormat(16000, 16, 1) })
+        {
+            using var probe = new WaveInEvent { DeviceNumber = deviceIndex, WaveFormat = format, BufferMilliseconds = 100 };
+            try
+            {
+                probe.StartRecording();
+                return format;
+            }
+            catch
+            {
+                // Try the next format.
+            }
+        }
+        return new WaveFormat(16000, 16, 1);
+    }
+
+    /// <summary>Source capture -> 16 kHz mono 16-bit: L+R averaged (covers mics on
+    /// either input of a 2-channel interface), nearest-neighbor decimation.</summary>
+    private static byte[] MixDownTo16kMono(byte[] buffer, int bytesRecorded, int sourceRate, int sourceChannels)
+    {
+        const int targetRate = 16000;
+        if (sourceRate == targetRate && sourceChannels == 1)
+            return buffer[..bytesRecorded];
+        var frames = bytesRecorded / (2 * sourceChannels);
+        var outSamples = (int)((long)frames * targetRate / sourceRate);
+        if (outSamples == 0) return [];
+        var result = new byte[outSamples * 2];
+        var step = (double)sourceRate / targetRate;
+        var position = 0.0;
+        for (var i = 0; i < outSamples; i++)
+        {
+            var frame = (int)position;
+            var left = BitConverter.ToInt16(buffer, frame * 2 * sourceChannels);
+            var right = sourceChannels >= 2
+                ? BitConverter.ToInt16(buffer, frame * 2 * sourceChannels + 2)
+                : left;
+            BitConverter.GetBytes((short)((left + right) / 2)).CopyTo(result, i * 2);
+            position += step;
+        }
+        return result;
+    }
+
     private void StopRecording()
     {
         try { _capture?.StopRecording(); } catch { }
         _capture?.Dispose();
         _capture = null;
+    }
+
+    /// <summary>ESC barge-in: cancels the in-flight turn through Core (M5 /voice/cancel
+    /// — the registry knows the streaming turn) and drops any half-captured utterance.</summary>
+    private async Task InterruptAsync(CancellationToken outer)
+    {
+        _turnCts?.Cancel();
+        _segmenter.Flush();
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_coreUrl}/voice/cancel");
+            request.Headers.Authorization = new("Bearer", _token);
+            using var response = await _http.SendAsync(request, outer);
+        }
+        catch { /* interrupt stays local even if Core is unreachable */ }
     }
 
     /// <summary>Silero VAD verdict for one chunk (voice service /vad/detect, M6).</summary>
@@ -121,15 +232,22 @@ public sealed class VoiceCaptureService : IDisposable
     }
 
     /// <summary>One voice turn: the utterance WAV goes to /voice/turn-stream; text deltas
-    /// print to the console, audio events play through NAudio in arrival order.</summary>
+    /// print to the console, audio events play through NAudio in arrival order. The echo
+    /// gate stays ON for the WHOLE turn (observed live: per-chunk gating leaks the TTS
+    /// back into the mic between sentences — TOLIK answered itself in a loop) plus a
+    /// decay tail; only the first MaxSpokenSentences play (the rest stay text — voice
+    /// replies must be short, "все мысли вслух" was real feedback).</summary>
     private async Task TurnAsync(byte[] utterance, CancellationToken cancellationToken)
     {
+        _turnCts?.Dispose();
+        _turnCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var turnToken = _turnCts.Token;
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_coreUrl}/voice/turn-stream");
         request.Headers.Authorization = new("Bearer", _token);
         request.Content = JsonContent.Create(new { audio = Convert.ToBase64String(ToWav(utterance)) });
         try
         {
-            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+            using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, turnToken);
             if ((int)response.StatusCode == 401) { Console.WriteLine("[VOICE] turn: authentication required"); return; }
             if (!response.IsSuccessStatusCode)
             {
@@ -139,11 +257,12 @@ public sealed class VoiceCaptureService : IDisposable
             var isSse = response.Content.Headers.ContentType?.MediaType == "text/event-stream";
             if (!isSse) { Console.WriteLine("[VOICE] turn: intent/pause JSON reply (no SSE stream)"); return; }
 
-            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(cancellationToken), Encoding.UTF8);
+            using var reader = new StreamReader(await response.Content.ReadAsStreamAsync(turnToken), Encoding.UTF8);
             var reply = new StringBuilder();
-            while (!cancellationToken.IsCancellationRequested)
+            var spoken = 0;
+            while (!turnToken.IsCancellationRequested)
             {
-                var line = await reader.ReadLineAsync(cancellationToken);
+                var line = await reader.ReadLineAsync(turnToken);
                 if (line is null) break;
                 if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data: ", StringComparison.Ordinal)) continue;
                 using var doc = JsonDocument.Parse(line["data: ".Length..]);
@@ -154,16 +273,40 @@ public sealed class VoiceCaptureService : IDisposable
                 {
                     Console.WriteLine($"[VOICE] TOLIK: {reply}");
                     reply.Clear();
-                    PlayAudio(Convert.FromBase64String(audio.GetString()!), cancellationToken);
+                    spoken++;
+                    if (spoken > MaxSpokenSentences)
+                    {
+                        Console.WriteLine("[VOICE] (further reply is text-only: voice replies stay short)");
+                        continue;
+                    }
+                    // The whole-turn echo gate: ON from the FIRST spoken sentence.
+                    _playing = true;
+                    PlayAudio(Convert.FromBase64String(audio.GetString()!), turnToken);
                 }
                 else if (type == "done") { break; }
                 else if (type == "error") { Console.WriteLine("[VOICE] model unavailable"); break; }
             }
         }
+        catch (OperationCanceledException) when (turnToken.IsCancellationRequested)
+        {
+            Console.WriteLine("[VOICE] turn interrupted");
+        }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         catch (Exception ex) when (ex is HttpRequestException or IOException)
         {
             Console.WriteLine("[VOICE] turn error: " + ex.Message);
+        }
+        finally
+        {
+            if (_playing)
+            {
+                // Decay tail: the room reverb must settle before the mic reopens,
+                // otherwise the tail becomes a spurious utterance (observed live).
+                try { await Task.Delay(400, cancellationToken); } catch (OperationCanceledException) { }
+                _playing = false;
+            }
+            _turnCts?.Dispose();
+            _turnCts = null;
         }
     }
 
