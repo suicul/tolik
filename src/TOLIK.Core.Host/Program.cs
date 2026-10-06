@@ -1874,6 +1874,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
         var fullText = new System.Text.StringBuilder();
         var firstDeltaMarked = false;
         var firstAudioMarked = false;
+        var spoken = 0;
         try
         {
             await foreach (var delta in completion.CompleteStreamAsync(route, modelRequest, TimeSpan.FromSeconds(120), ct))
@@ -1885,14 +1886,23 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
                     firstDeltaMarked = true;
                 }
                 await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "delta", text = delta }));
-                // Sentence boundary → TTS per-sentence (sanitized: instructions never spoken).
+                // Sentence boundary → TTS per-sentence (sanitized: instructions never
+                // spoken). Voice text (0.11/0.12): markdown decorations never reach the
+                // TTS; fenced code/JSON is dropped from speech entirely; the spoken
+                // budget follows the deterministic response class — the model never
+                // chooses how much of itself is voiced (§23).
                 foreach (var sentence in chunker.Feed(delta))
                 {
                     var clean = ModelResponseSanitizer.Sanitize(sentence);
                     if (string.IsNullOrWhiteSpace(clean.Text)) continue;
-                    var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(clean.Text, profile, VoiceMode.Normal), effectiveMode, ct);
+                    var speech = VoiceTextCleaner.CleanForSpeech(clean.Text);
+                    if (string.IsNullOrWhiteSpace(speech)) continue;
+                    if (spoken >= VoiceResponsePolicy.MaxSpokenSentences(VoiceResponsePolicy.Classify(fullText.ToString())))
+                        continue; // budget spent — the rest stays text (deltas carry it)
+                    var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, ct);
                     if (chunkAudio is not null)
                     {
+                        spoken++;
                         if (!firstAudioMarked)
                         {
                             telemetry.Mark("tts_first_audio");
@@ -1906,9 +1916,16 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
             {
                 var clean = ModelResponseSanitizer.Sanitize(tail);
                 if (string.IsNullOrWhiteSpace(clean.Text)) continue;
-                var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(clean.Text, profile, VoiceMode.Normal), effectiveMode, ct);
+                var speech = VoiceTextCleaner.CleanForSpeech(clean.Text);
+                if (string.IsNullOrWhiteSpace(speech)) continue;
+                if (spoken >= VoiceResponsePolicy.MaxSpokenSentences(VoiceResponsePolicy.Classify(fullText.ToString())))
+                    continue;
+                var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, ct);
                 if (chunkAudio is not null)
+                {
+                    spoken++;
                     await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "audio", audio = Convert.ToBase64String(chunkAudio.Data) }));
+                }
             }
             var sanitized = ModelResponseSanitizer.Sanitize(fullText.ToString());
             await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {sanitized.Text}", "voice.assistant", 0.8, ct);
