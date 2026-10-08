@@ -81,15 +81,18 @@ device identity §10/§11). Стек: Unity + Meta XR SDK (C# — совпада
 — после Desktop M9-M13. Смарт-очки (Ray-Ban Meta Display: Web Apps через QR +
 Wearables Toolkit 1.0; Xiaomi — research): docs/VR.md §8, после VR-трека.
 
-## Track 8 — Voice Identity: Genesis Enrollment + Adaptive Speaker Profile (approved 07.10.2026) 🔲 plan done, implementation queued
-Full plan: **docs/voice-identity.md** (12 требований владельца: canonical+adaptive
-профиль, anti-contamination tiers, bounded adaptation/decay, Genesis-фаза
-голосового enrollment'а владельца, conversational enrollment доверенных лиц
-через существующие роли, household 1:N identify, emotion-контракт без фейка,
-privacy/retention, recovery/диагностика, realtime, 20 тестов). Фазы VI-0..VI-7
-с зависимостями; VI-0 (калибровка на 985-клиповом датасете) блокирует числа
-остальных. Живые голосовые тесты — отложены до выходных владельца; реализация
-идёт автономно по unit-тестам.
+## Track 8 — Voice Identity: Genesis Enrollment + Adaptive Speaker Profile (approved 07.10.2026) ✅ implementation DONE 08.10.2026, live voice verification pending (owner's weekend)
+Full plan: **docs/voice-identity.md**. VI-0..VI-7 все DONE: VI-0 калибровка
+(329 клипов, measured), VI-1 VoiceProfile v2 (canonical anchors + bounded
+adaptive ≤8/TTL 30d/Wc 0.7), VI-2 async адаптация (channel вне turn-пути,
+update только существующих профилей), VI-3 Genesis voice phase (5 фонетических
+фраз, quality/consistency, /genesis/voice/*), VI-4 household (EnrollTrustedPerson
+интент, /voice/person/enroll Owner+High gate, role Family/TrustedGuest НИКОГДА
+Owner, distinctness vs все профили), VI-5 recovery/diagnostics (toggle/reset/
+delete/speakerTier+Reason), VI-6 emotion контракт (без фейка). Anti-contamination
+тройная защита (tier 0.60 > accept 0.45 + bounded layer + distinctness). 388/388
+green (+49 тестов к Track 8). Живые голосовые тесты (реальный enroll владельца,
+Maria, ceremony) — выходные владельца.
 
 ## Track 9 — Jarvis Foundation: Governance + Computer Use (approved 08.10.2026) 🔲 plans done, no implementation (PRE-GENESIS)
 Two companion plans from owner directives, grounded in a full code audit (exp-9):

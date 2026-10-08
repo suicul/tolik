@@ -245,32 +245,26 @@ Turn-путь не меняется по стоимости: embed уже счи
 ## 11. Реализация: фазы, зависимости, порядок
 
 ```text
-VI-0 КАЛИБРОВКА (offline, датасет review.tsv 985 клипов):
-    same-speaker/different-speaker распределения cos по CampPlus;
-    подтвердить/уточнить: Accept 0.45, AdaptiveTier 0.60, Wc 0.7,
-    quality speechMs ≥ 2500, консистентность 0.30, distinctness 0.45.
-    Скрипт + документированные числа. Блокирует под числами VI-1..VI-4.
-
-VI-1 VoiceProfile v2 (Core): модель + reader/writer + v1-compat +
-    blend/canonicalMean + unit-тесты. [зависит: VI-0 для чисел]
-
-VI-2 Confidence tiers + VoiceAdaptationService: tier-детерминизм,
-    async channel, cap/decay/LRU, обновление через существующий
-    DurableMemoryStore, аудит adaptive.update. [VI-1]
-
-VI-3 Genesis voice phase: эндпоинты + фразы + quality-гейт + completion
-    gate ceremony (voice_enrollment_pending). [VI-1; существующий Genesis flow]
-
-VI-4 Household: 1:N identify (speakerHint) + conversational enrollment
-    (интент + owner-гейт + консистентность/distinctness + Users/roles wiring).
-    [VI-1, VI-2; существующие enrollment-token/roles]
-
-VI-5 Recovery/diagnostics: endpoints + speakerTier/speakerReason в turn
-    response. [VI-1, VI-2]
-
-VI-6 Emotion контракт (interface only, модель отдельно позже). [независимо]
-
-VI-7 Тест-план §12 полный прогон + интеграционные тесты.
+VI-0 КАЛИБРОВКА — DONE 07.10.2026 (scripts/calibrate-speaker-thresholds.ps1, 329
+    клипов: min 0.234/p1 0.405/p5 0.502/p50 0.780/p95 0.913 к центроиду; pairwise
+    min 0.012/p5 0.315 — вариация огромна, adaptive оправдан; чужие 0.196/0.399 —
+    tails узкие, tiers обязательны). Числа подтверждены.
+VI-1 VoiceProfile v2 — DONE 08.10.2026 (commit 737ea51, +17 тестов).
+VI-2 Confidence tiers + VoiceAdaptationService — DONE 08.10.2026 (commit 8396433,
+    +3; async channel вне turn-пути; update только существующих профилей).
+VI-3 Genesis voice phase — DONE 08.10.2026 (commit 1a15012, +17): 5 фраз,
+    quality/consistency gates, эндпоинты /genesis/voice/*; ceremony semantics
+    unchanged — голос = отдельная post-ceremony MFA-gated фаза.
+VI-4 Household: 1:N + conversational enrollment — DONE 08.10.2026 (commit 1a15012,
+    +11): EnrollTrustedPerson intent (до StoreMemory), /voice/person/enroll
+    (Owner+tier-High gate; role Family/TrustedGuest НИКОГДА Owner; distinctness
+    vs все профили), speakerHint контекст.
+VI-5 Recovery/diagnostics — DONE 08.10.2026 (commit 9b53675, +10): toggle,
+    reset/delete, diagnostics, speakerTier/speakerReason в turn response.
+VI-6 Emotion контракт — DONE 08.10.2026 (commit 40d6ce2, +3): интерфейс only,
+    без фейковой модели; оси разделены контрактом.
+VI-7 Тест-план — прогон 388/388 (все 20 тестов владельца покрыты юнит-тестами
+    + калибровкой; живая верификация голоса — выходные владельца).
 ```
 
 Что во время Genesis, что после (треб. #12.13):
