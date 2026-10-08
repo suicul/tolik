@@ -100,6 +100,24 @@ Two companion plans from owner directives, grounded in a full code audit (exp-9)
 - **docs/computer-use.md**: CU-1..CU-10 (после Genesis): Computer Use Foundation, UI Observation (a11y/OCR/vision), UI World Model, Closed-loop, Sensitive UI + prompt injection, Browser Automation, Skill Learning (semantic), Exploration Mode, Demonstration Learning, Long-running, Cephalon. **+ §15 Game Automation & Interactive Application Layer (CU-GA, директива 09.10.2026):** игры как специализация Computer Use (среда БЕЗ a11y-гарантий: DirectX/анимации/cooldowns), Game World Model (семантические таргеты первичны, координаты = execution detail), closed-loop с верификацией перехода состояния (клик никогда не считается успешным), GAME_LEARNING_MODE (семантические workflow, НЕ координаты; demonstration → валидация автономным воспроизведением → только verified → trusted), goal-oriented tasks («фарми до 100М» — цели, не макросы), WaitUntil-условия вместо sleep, dynamic UI adaptation (re-identify при апдейтах), safety НЕ ослабляется «потому что игра» (анти-cheat bypassing/DRM ЗАПРЕЩЕНЫ — AGENTS.md §25), иерархическое наблюдение (дорогая модель только при значимом изменении сцены), skill confidence states (LOW_CONFIDENCE → нет risky autonomous). ДО Genesis: контракты без фейка; ПОСЛЕ: провайдеры/GAME_LEARNING_MODE/goal runner/skills.
 - **Реализовано (PRE-GENESIS scope, 410/410 green):** Phase A (CapabilityRegistry + gap-fix, commit a352f68) + Phase B (AutonomyPolicy, commit affc51b) + E-минимум (pause/resume, commit affc51b) — +22 теста. Остальное (C broker, D2, E2, F, G, CU-*) — ПОСЛЕ Genesis по планам.
 
+## Track 10 — Self-Evolution: Self-Development + Self-Optimization (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+Full plan: **docs/self-evolution.md** (директива 09.10.2026). Три РАЗДЕЛЬНЫЕ
+подсистемы (§26): Self-Maintenance (governance §4) / Self-Optimization (эксперимент-
+цикл: Measure→Bottleneck→Hypothesis→Branch→Benchmark→Regression→Security→Baseline
+compare→Accept только если объективно лучше→Canary→Deploy; «быстрее, но менее
+надёжно — НЕ оптимизация») / Self-Development (Missing Capability→Design→Implement
+через СУЩЕСТВУЮЩИЕ dev agents run_codex/run_opencode→Test→Deploy). Fundamentals
+уже есть: метрики (M7 telemetry), benchmark-скрипты (benchmark-tts.py паттерн),
+LearnedRuleStore (provenance/confidence — эксперименты), ToolEscalation
+(**protected self-modification УЖЕ ИМЕЕТ техническую основу** — security-critical
+source → Critical+confirm; расширение на новые security-компоненты), snapshot/
+rollback (canary паттерн), M8 game detection (бюджеты: игра → suspend), Night/
+Offline (окна). Фазы SE-0..SE-7; ДО Genesis: SE-0 метрики, SE-1 baseline store,
+SE-4 protected расширение; ПОСЛЕ: SE-2/3 лаборатория/бюджеты, SE-5/6
+само-развитие/цикл, SE-7. Skill model/lifecycle (полные состояния
+DISCOVERED..ROLLED_BACK, PostgreSQL, semantic-НЕ-координаты, Memory≠Skill≠Task≠
+Authorization, application-specific policy) — docs/computer-use.md §16.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).

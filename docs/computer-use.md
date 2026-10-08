@@ -299,3 +299,68 @@ pre-Genesis допустимо) + CU-3 (closed-loop — post-Genesis) + governan
 интерфейсы, без фейковых реализаций). ПОСЛЕ Genesis: game capture-провайдеры,
 GAME_LEARNING_MODE, goal runner, game skills. Acceptance UX: «научись играть в
 эту игру» → позже «пофарми мне» — нормальная capability, не хардкод per-game.
+
+## 16. Persistent Skill Model + Lifecycle (директива 09.10.2026, §3-§4, §16-§17)
+
+**Хранилище**: PostgreSQL (как LearnedRules) — skills переживают
+process/machine/Core restart, смену модели и клиента (треб. §2). Ни одного
+hard-coded имени (MySingingMonstersSkill/TelegramSkill — данные, не код).
+
+**Skill model (семантическая, НЕ координаты)**:
+
+```text
+application / app_version / platform / UI variant / resolution / environment
+known screens → semantic controls → visual anchors → navigation → workflows
+goals / preconditions / postconditions / verification rules
+recovery procedures / timing info / learned patterns
+confidence / provenance / validation history / last successful use
+last verification / version history / rollback info
+```
+
+BAD: Click(742,381). GOOD: FindSemanticTarget(type=ResourceCollector,
+context=CurrentIsland) → resolve текущую визуальную локацию. Координаты —
+low-level execution detail, не первичная репрезентация.
+
+**Полный lifecycle (треб. §4 — надмножество CU-GA confidence states)**:
+
+```text
+DISCOVERED → LEARNING → VALIDATING → LOW_CONFIDENCE → VERIFIED → TRUSTED
+→ OUTDATED (апдейт приложения) → адаптация → валидация → НОВАЯ ВЕРСИЯ
+→ DISABLED / ROLLED_BACK
+```
+
+Новый skill НЕ становится trusted сразу: Learning → Candidate → Validation →
+Verified → Trusted → Normal Reuse. Version history + rollback: trusted skill
+НИКОГДА не перезаписывается молча непроверенной адаптацией (треб. §16).
+
+**Memory ≠ Skill ≠ Task ≠ Authorization (треб. §17)**:
+
+| Концепт | Содержание | Пример |
+|---|---|---|
+| Memory | факты/предпочтения/контекст | «Ivan предпочитает этот роут фарма» |
+| Skill | КАК выполнить операцию | «как открыть меню и выполнить workflow» |
+| Task | ЧТО делается сейчас | «фарм до 100М монет» |
+| Authorization | МОЖНО ли | governance-машина |
+
+Memory НИКОГДА не выдаёт permissions; Skill НИКОГДА; успешное прошлое действие
+не становится постоянной authorization. Связи: Task ссылается на Skill (по id);
+Memory может ссылаться на Skill (предпочтение); Skill ссылается на application.
+Раздельные хранилища, раздельные записи.
+
+**Skill → Computer Use hierarchy (треб. §7)**: Native API → App integration →
+CLI/PowerShell → Windows API → UIA/a11y → Browser automation → OCR/Vision →
+GUI. Динамический выбор: не форсировать vision при надёжном семантическом API;
+не форсировать координаты при UIA.
+
+**Application-specific policy (треб. §18)**: Computer Use engine остаётся
+generic; ПОЛИТИКА решает, что можно с конкретным приложением:
+
+```text
+Application Policy: Vision / Screen Analysis / Knowledge / Recommendations —
+ALLOWED; UI Control — ALLOWED/RESTRICTED/BLOCKED; Autonomous Tasks —
+ALLOWED/CONFIRM/BLOCKED
+```
+
+Интеграция: Identity/Roles/Ceilings/Authorization/Autonomy/CapabilityRegistry/
+Audit/Emergency Stop (governance). Автоматизация НЕ разрешена только потому,
+что технически возможна; anti-cheat/DRM/credentials — запрещены.
