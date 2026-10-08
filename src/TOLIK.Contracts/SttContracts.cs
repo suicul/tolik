@@ -63,3 +63,36 @@ public sealed record VoiceTurnResponse(
     double SpeakerConfidence = 0,
     string SpeakerTier = "none",
     string SpeakerReason = "not_evaluated");
+
+/// <summary>
+/// Voice emotion (docs/voice-identity.md §7 / VI-6): a SEPARATE observation from the
+/// speaker identity — never an input to the speaker score (Ivan may sound angry yet
+/// stay Ivan; emotion only paints the Cephalon). Detected by a future voice-service
+/// model; nothing fakes it before one exists.
+/// </summary>
+public enum VoiceEmotion
+{
+    Neutral,
+    Excited,
+    Angry,
+    Happy,
+    Tired
+}
+
+/// <summary>One emotion observation with its own confidence (never mixed into speaker identity).</summary>
+public sealed record VoiceEmotionObservation(VoiceEmotion Emotion, double Confidence);
+
+/// <summary>
+/// Emotion detection boundary (docs/voice-identity.md VI-6). NO FAKE: an implementation
+/// must really detect emotion (a future voice-service model); when none is configured,
+/// DetectAsync returns null and callers treat emotion as absent. The result NEVER
+/// influences speaker identity scoring (§7) — separate axes by contract.
+/// </summary>
+public interface IVoiceEmotionDetector
+{
+    /// <summary>True only when a real detector is configured and loaded.</summary>
+    bool IsConfigured { get; }
+
+    /// <summary>Detects emotion from raw audio; null when not configured or audio unusable.</summary>
+    Task<VoiceEmotionObservation?> DetectAsync(byte[] audio, CancellationToken cancellationToken = default);
+}
