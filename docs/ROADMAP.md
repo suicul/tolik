@@ -179,6 +179,40 @@ autonomy). Genesis НЕ заканчивается с ceremony (Development → 
 Autonomy→Authorization→Capability→Execution→Verification; НИКОГДА
 Emotion/Curiosity/Boredom/Relationship/Memory→Permission.
 
+## Track 14 — Realistic Autonomy: Trust + Consent + Reward (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+Full plan: **docs/realistic-autonomy.md** (директива 09.10.2026). Главный принцип:
+**DREAM ≠ REALISTIC ≠ FUTURE** — не вся футуристическая capability в первой
+реализации. **Спектр автономии L0-L5** (Reactive/Assisted/Supervised/Bounded/
+Proactive/Long-Term Experimental — НЕ boolean; L5 НИКОГДА unrestricted) поверх
+governance AutonomyPolicy; **Initiative ≠ Authority ≠ Capability** (НИКОГДА не
+смешивать); **Default: высокая инициатива в sandbox, консервативная authority
+вне**. Домены + бюджеты (исчерпание → PAUSE→SAVE→WAIT/NOTIFY, не вечно) + stop
+conditions. **TrustModel**: НЕ permission; многомерный (Reliability/Identity/
+Social/Technical/TaskExecution/Communication/Safety — НЕ TrustScore=97);
+provenance (evidence/timestamp/domain/reason); decay/revalidation (6-месячный
+skill → OUTDATED); **НИКОГДА self-escalating** («заработал доверие → дам себе
+permissions» — НЕТ); **НЕ послушание**: «Удали всё» → «Уточни, что именно» =
+свидетельство хорошего суждения. **ConsentModel**: структурированный grant
+(Subject/Actor/Action/Target/Scope/Duration/Conditions/Risk/Revocation/
+Evidence); уровни One-Time/Task/Session/Domain/Persistent(low-risk only);
+natural-language consent («Продолжай»/«Делай пока не закончишь» → bounded
+grants); target-bound («почини голосовой» ≠ «modify anything»); revocable
+(«прекращай» → stop+revoke+preserve+report). **Reward system** (НОВАЯ область):
+Reward ≠ Permission XP (никогда «100 достижений → admin»); типы Social/
+Celebration/Achievement/Cosmetic/Creative/Shared Experience; смысл > геймификации
+(несколько meaningful вместо тысяч очков); **ANTI-REWARD-HACKING** (не
+оптимизировать ради похвалы/trust — только фактический успех + честность;
+провал: «Не получилось» правильно, «был прогресс, дай credit» неправильно);
+Effort vs Result (Achievement + EffortAcknowledgement); RewardEvent memory;
+Genesis FIRST_SUCCESS. Genesis firsts + первый провал (осмысленнее success-
+цепочки) + first self-discovery (реальный CapabilityConfidence, не fake
+consciousness). «20 часов одни»: 5 tier'ов (задачи/maintenance/useful/
+curiosity/REST) + НЕ fake время (10 мин работы + 2ч ожидания + 6ч rest) +
+RESTING ≠ OFFLINE (события будят). **Реалистичный roadmap A-I**: Foundation/
+Real Autonomy/**Real-Time Voice (✓ СДЕЛАНО M0-M8)**/Multimodal/Genesis/
+Computer Use/Mind/Self-Development/Advanced (DREAM). Фазы RA-0..RA-4;
+pre-Genesis: RA-0/1/2; post-Genesis: RA-3/4.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
