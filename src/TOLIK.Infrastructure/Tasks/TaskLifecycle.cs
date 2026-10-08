@@ -42,6 +42,20 @@ public sealed class TaskLifecycle
     public void Fail(Guid id, string detail) { Transition(id, TolikTaskStatus.Running, TolikTaskStatus.Failed); Cleanup(id); Publish(id, "TaskFailed", detail); }
     /// <summary>Parks a task awaiting an explicit confirmation (§9); re-executable after approval.</summary>
     public void Pause(Guid id, string detail) { Transition(id, TolikTaskStatus.Running, TolikTaskStatus.Paused); Publish(id, "TaskProgress", detail); }
+    /// <summary>
+    /// Resumes a paused task (docs/governance.md §5): Paused→Running ONLY, with a fresh
+    /// CTS (same pattern as TryStart); false for any other state or when MaxActiveTasks
+    /// would be exceeded. The reason is published as the TaskResumed event detail.
+    /// </summary>
+    public bool TryResume(Guid taskId, string reason)
+    {
+        if (tasks.Values.Count(x => x.Status is TolikTaskStatus.Pending or TolikTaskStatus.Running) >= MaxActiveTasks) return false;
+        if (!Transition(taskId, TolikTaskStatus.Paused, TolikTaskStatus.Running)) return false;
+        var source = new CancellationTokenSource();
+        cancellations[taskId] = source;
+        Publish(taskId, "TaskResumed", reason);
+        return true;
+    }
     public void ReportProgress(Guid id, string detail) => Publish(id, "TaskProgress", detail);
     public IReadOnlyList<TaskLifecycleEvent> GetEvents(Guid id) => events.Where(x => x.TaskId == id).ToArray();
     /// <summary>Optional realtime subscriber (WebSocket hub). Never throws on unsubscribe races.</summary>

@@ -1118,6 +1118,38 @@ app.MapPost("/tasks/{taskId:guid}/cancel", async (Guid taskId, HttpContext conte
     persisted.Status = "Cancelled"; persisted.CancelledAt = DateTimeOffset.UtcNow; persisted.CompletedAt = persisted.CancelledAt; await db.SaveChangesAsync(cancellationToken);
     return Results.Ok(lifecycle.Get(taskId));
 });
+app.MapPost("/tasks/{taskId:guid}/pause", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, AuditWriter audit, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    // docs/governance.md §5: explicit pause — Paused becomes a real state, not only a
+    // confirmation-parking lot. Ownership mirrors /cancel (own task via the persisted row);
+    // the transition itself is the lifecycle's (fail-closed: non-Running → 409).
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    var persisted = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken);
+    if (persisted is null) return Results.NotFound();
+    var task = lifecycle.Get(taskId);
+    if (task is null || task.Status is not TolikTaskStatus.Running) return Results.Conflict(new { error = "invalid_task_state" });
+    lifecycle.Pause(taskId, "paused_by_owner");
+    persisted.Status = "Paused"; await db.SaveChangesAsync(cancellationToken);
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "task.pause", "ALLOW", "task_paused", principal, null, null, taskId.ToString("D"), "paused", cancellationToken);
+    return Results.Ok(new { paused = true });
+});
+app.MapPost("/tasks/{taskId:guid}/resume", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, AuditWriter audit, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    // docs/governance.md §5: Paused→Running via TryResume with a fresh CTS; authorization
+    // revalidation on resume lands with the full Phase E (owner req 14 — old permission
+    // does not grow with age). Fail-closed: non-Paused or limit-reached → 409.
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    var persisted = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken);
+    if (persisted is null) return Results.NotFound();
+    if (!lifecycle.TryResume(taskId, "resumed_by_owner")) return Results.Conflict(new { error = "invalid_task_state" });
+    persisted.Status = "Running"; await db.SaveChangesAsync(cancellationToken);
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "task.resume", "ALLOW", "task_resumed", principal, null, null, taskId.ToString("D"), "resumed", cancellationToken);
+    return Results.Ok(new { resumed = true });
+});
 app.MapGet("/tasks/{taskId:guid}/events", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
@@ -1200,6 +1232,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
         await db.SaveChangesAsync(executionCancellation.Token);
         var plan = planner.Create(request.Request ?? task.Description, request.MaxSteps, TimeSpan.FromSeconds(request.BudgetSeconds), await ResolveStepsAsync(request, task.Description, autoPlanner, router, completion, executionCancellation.Token));
         var confirmations = context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Authorization.ConfirmationStore>();
+        var stepAudit = context.RequestServices.GetRequiredService<AuditWriter>();
         var stepNumber = 0;
         var results = await guard.ExecuteAsync(plan, async (step, token) =>
         {
@@ -1229,6 +1262,19 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 }
                 if (decision is AuthorizationDecision.Deny)
                     throw new UnauthorizedAccessException($"capability_denied:{capability};risk={effectiveRisk}");
+                // Phase B wire-in (docs/governance.md §2): the autonomy decision is computed
+                // and audited only — the Notify/Confirm/MfaConfirm levels are NOT enforced on
+                // this path yet (enforcement lands with Phase E2/F). AuthorizationPolicy.Allow
+                // remains the sole gate; autonomy composes it, never replaces it (no
+                // execute-semantics change).
+                var autonomy = AutonomyPolicy.Decide(new AutonomyContext(
+                    principal, capability, resource,
+                    PolicyDecision: AuthorizationDecision.Allow,
+                    Reversible: CapabilityRegistry.Find(capability)?.Reversible ?? false,
+                    Interactive: true, PartOfTask: true, PreAuthorizedRuleMatches: false,
+                    OfflineMode: router.IsOfflineMode, CoreLocked: securityState.IsLocked));
+                await stepAudit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "task.step", "ALLOW",
+                    $"autonomy:{autonomy.ToString().ToLowerInvariant()}", principal, capability, effectiveRisk, resource, "authorized", CancellationToken.None);
                 // Agent execution failure is a step outcome, not a transport error:
                 // record partial progress and stop without cascading (§22 autonomy
                 // stays fail-closed: no further steps run after a failure).
