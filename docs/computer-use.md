@@ -213,3 +213,89 @@ autonomy policy), CU-5+ (skills), CU-9 (autonomous chains).
 Acceptance (треб. #44): сценарии 1-6 директивы покрываются: 1 (LaunchApplication
 LOW/AUTONOMOUS — governance §2), 2-3 (capabilities через политику), 4
 (unknown → DENY), 5 (Maria FAMILY policy), 6 (self-healing governance §4).
+
+## 15. Game Automation & Interactive Application Layer (CU-GA; директива 09.10.2026)
+
+НЕ отдельный «game bot» — специализация существующего Computer Use (треб. #14).
+Игры — среда БЕЗ гарантий: нет a11y tree, DirectX/OpenGL/Vulkan, анимированный
+UI, таймеры/cooldowns, ресурсные счётчики, popups, drag&drop, транзиентные
+элементы, fullscreen. Пайплайн (треб. #1):
+
+```text
+Screen Capture → Vision → OCR → Visual Element Detection
+→ Cursor/Mouse/Keyboard Input → Temporal State Tracking → Action Verification
+```
+
+Без предположения, что a11y существует.
+
+**Game World Model (треб. #2)** — расширение UI World Model (§4):
+Game/Scene/Screen/Menu/Island/Character/Building/Resource/Counter/Timer/
+Cooldown/Button/InteractiveObject/Popup/Dialog/Loading/Animation/Error.
+СЕМАНТИЧЕСКАЯ идентичность первична: `FindSemanticTarget(type=ResourceCollector,
+context=CurrentIsland)` → текущая визуальная локация; координаты — внутренний
+execution detail (BAD: Click(742,381)).
+
+**Closed-loop (треб. #3)**:
+
+```text
+OBSERVE → UNDERSTAND → PLAN → AUTHORIZE (governance §2) → ACT → WAIT
+→ OBSERVE → VERIFY → UPDATE STATE → CONTINUE / RECOVER / ASK
+```
+
+Клик НИКОГДА не считается успешным: после действия — ожидаемый переход состояния
+(счётчик вырос / объект сменил состояние / анимация); иначе → inspect →
+re-localize → bounded retry → recover → ask.
+
+**Game Skill Learning (треб. #4, #5)** — GAME_LEARNING_MODE: наблюдение экрана +
+действий пользователя + корреляция с изменениями состояния → семантический
+workflow: OpenGame/SelectIsland/FindCollectable/CollectResource/
+CheckResourceCounter/WaitForCooldown/NavigateToNextArea/HandlePopup/
+RecoverFromUnexpectedState — НЕ Click(421,332). Demonstration: действие +
+предыдущее состояние + результат → candidate workflow → ВАЛИДАЦИЯ автономным
+воспроизведением → только verified становятся trusted skills.
+
+**Goal-oriented tasks (треб. #6)**: GOAL → STATE → PLAN → ACTION LOOP →
+PROGRESS → ADAPTATION → COMPLETION/STOP. «Фарми до 100М монет», «каждые 30
+минут», «до 06:00», «пока не кончится энергия» — цели, не макросы. Runner:
+start/pause/resume/cancel/stop-conditions/time/resource/failure limits/
+persistent/recovery после рестарта — governance §5 (TaskSteps/pause/resume/
+PAUSED_BY_RESTART, уже в плане).
+
+**Temporal reasoning (треб. #7)**: таймеры/cooldowns/анимации/loading —
+`WaitUntil(StateCondition | VisualCondition | TimerCondition)` с timeout и
+recovery; произвольные длинные sleep — только когда иначе нельзя.
+
+**Dynamic UI adaptation (треб. #8)**: апдейт игры → re-identify semantic
+targets (не старые координаты). Skill tracks: version/resolution/UI variant/
+confidence/last successful verification/visual anchors/recovery strategies.
+
+**Long-running (треб. #9)**: интеграция с governance §5. Crash → detect →
+restart if authorized → restore skill → resume → verify. Unexpected screen →
+detect → classify → recover → verify → иначе pause + ask.
+
+**Safety (треб. #10)**: существующие identity/roles/ceilings/authorization/
+capability registry/autonomy policy/confirmation/audit/Emergency Stop —
+НЕ ослабляются «потому что игра». ЗАПРЕЩЕНО: anti-cheat bypassing, credential
+theft, DRM circumvention, security circumvention (AGENTS.md §25: game-специфичный
+cheating — не фундаментальная задача). Только обычный user-level interaction
+через те же computer-control механизмы, что доступны пользователю.
+
+**Performance (треб. #11)**: иерархическое наблюдение — deterministic state →
+window detection → light UI → OCR → local vision → дорогая модель только когда
+нужно. Кэш стабильной визуальной информации; temporal differences; re-perceive
+только при значимом изменении сцены.
+
+**Skill confidence (треб. #12)**: LEARNING/VALIDATING/LOW_CONFIDENCE/VERIFIED/
+TRUSTED/OUTDATED/DISABLED; LOW_CONFIDENCE → не выполняет risky действия
+автономно; re-validation/rollback/disable/delete/re-learning/versioning.
+
+**Cephalon (треб. #13)**: состояния Looking/Thinking/Learning/Working/Waiting/
+Recovering/Success/Confused/Error → RealtimeEventHub (расширение CU-10);
+визуал НИКОГДА не влияет на authorization/security.
+
+**Порядок и решения**: CU-GA-* строятся на CU-1/CU-2 (Foundation/Observation —
+pre-Genesis допустимо) + CU-3 (closed-loop — post-Genesis) + governance §5.
+ДО Genesis: контракты (Game World Model, WaitUntil, skill confidence states —
+интерфейсы, без фейковых реализаций). ПОСЛЕ Genesis: game capture-провайдеры,
+GAME_LEARNING_MODE, goal runner, game skills. Acceptance UX: «научись играть в
+эту игру» → позже «пофарми мне» — нормальная capability, не хардкод per-game.
