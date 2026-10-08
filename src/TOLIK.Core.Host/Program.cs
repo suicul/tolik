@@ -63,6 +63,10 @@ builder.Services.AddSingleton<VoiceRuntimeState>();
 builder.Services.AddSingleton<VoiceTurnRegistry>();
 builder.Services.AddTransient<VoiceTurnTelemetry>();
 builder.Services.AddHostedService<ModelPrewarmService>();
+// Voice identity (docs/voice-identity.md VI-2): adaptive learning runs OUTSIDE the
+// turn path; the channel is the only hand-off (bounded, non-blocking).
+builder.Services.AddSingleton<VoiceAdaptationChannel>();
+builder.Services.AddHostedService<VoiceAdaptationService>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
@@ -1668,7 +1672,7 @@ app.MapPost("/voice/transcribe", async (HttpContext context, IdentityService ide
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (stt): {result.Text}", "voice.stt", 1, cancellationToken);
     return Results.Ok(new { text = result.Text, language = result.Language, durationSeconds = result.DurationSeconds, model = result.Model });
 });
-app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1693,7 +1697,9 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     if (string.IsNullOrWhiteSpace(transcription.Text))
         return Results.Ok(new VoiceTurnResponse("(пауза)", "Я ничего не услышал — повтори, пожалуйста.", VoiceMode.Normal, null, null, transcription.Model));
 
-    // 1b. Speaker check (§13): the same audio, embedding vs enrolled profile.
+    // 1b. Speaker check (§13): v1/v2 profile aware — Similarity over the canonical
+    // anchor AND the adaptive blend (docs/voice-identity.md VI-1/VI-2); HIGH-tier
+    // turns enqueue adaptive candidates asynchronously, the turn never waits.
     // No profile -> device auth only (today's behavior). Profile + mismatch ->
     // guest-mode prompt + provenance flag, never a silent pass.
     var speakerProfiles = await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken);
@@ -1703,17 +1709,7 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     if (hasSpeakerProfile)
     {
         var turnEmbedding = await EmbedSpeakerAudioAsync(request.Audio, "turn.wav", configuration, context.RequestServices, cancellationToken);
-        if (turnEmbedding is not null && turnEmbedding.Count > 0)
-        {
-            try
-            {
-                using var document = System.Text.Json.JsonDocument.Parse(speakerProfiles[0].Content);
-                var referenceVector = document.RootElement.GetProperty("embedding").EnumerateArray().Select(e => e.GetDouble()).ToList();
-                speakerConfidence = SpeakerVerifier.Cosine(referenceVector, turnEmbedding);
-                speakerVerified = SpeakerVerifier.Accept(speakerConfidence);
-            }
-            catch (ArgumentException) { /* corrupt profile or mismatch: stays unverified */ }
-        }
+        (speakerVerified, speakerConfidence) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, cancellationToken);
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
 
@@ -1772,7 +1768,7 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
     return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
 });
-app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
     // chunks → TTS per-sentence → audio events as they arrive. The client plays
@@ -1802,7 +1798,9 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     if (string.IsNullOrWhiteSpace(transcription.Text))
         return Results.Ok(new VoiceTurnResponse("(пауза)", "Я ничего не услышал — повтори, пожалуйста.", VoiceMode.Normal, null, null, transcription.Model));
 
-    // Speaker check (§13): the same as /voice/turn.
+    // Speaker check (§13): v1/v2 profile aware — canonical anchor + adaptive blend
+    // (docs/voice-identity.md VI-1/VI-2); HIGH-tier turns enqueue adaptive
+    // candidates asynchronously, the turn never waits.
     var speakerProfiles = await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken);
     var hasSpeakerProfile = speakerProfiles.Count > 0;
     var speakerVerified = false;
@@ -1810,17 +1808,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     if (hasSpeakerProfile)
     {
         var turnEmbedding = await EmbedSpeakerAudioAsync(request.Audio, "turn.wav", configuration, context.RequestServices, cancellationToken);
-        if (turnEmbedding is not null && turnEmbedding.Count > 0)
-        {
-            try
-            {
-                using var document = System.Text.Json.JsonDocument.Parse(speakerProfiles[0].Content);
-                var referenceVector = document.RootElement.GetProperty("embedding").EnumerateArray().Select(e => e.GetDouble()).ToList();
-                speakerConfidence = SpeakerVerifier.Cosine(referenceVector, turnEmbedding);
-                speakerVerified = SpeakerVerifier.Accept(speakerConfidence);
-            }
-            catch (ArgumentException) { /* corrupt profile or mismatch: stays unverified */ }
-        }
+        (speakerVerified, speakerConfidence) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, cancellationToken);
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
     telemetry.Mark("speaker_done");
@@ -2054,6 +2042,54 @@ static async Task<List<double>?> EmbedSpeakerSampleAsync(Microsoft.AspNetCore.Ht
     using var buffer = new MemoryStream();
     await file.CopyToAsync(buffer, cancellationToken);
     return await EmbedSpeakerAudioAsync(buffer.ToArray(), file.FileName, configuration, services, cancellationToken);
+}
+
+static async Task<int> MeasureSpeechMsAsync(byte[] audio, string fileName, IConfiguration configuration, IServiceProvider services, CancellationToken cancellationToken)
+{
+    // VI-2 quality signal: the M6 Silero VAD speech duration of the turn audio.
+    // 0 on ANY failure — the adaptive gate treats it as "quality unknown" and
+    // refuses to learn (fail closed for learning, the turn itself is unaffected).
+    if (audio is null || audio.Length == 0) return 0;
+    var voiceBase = configuration["TOLIK_VOICE:COSYVOICE_ENDPOINT"] ?? "http://voice:9660";
+    var http = services.GetRequiredService<IHttpClientFactory>().CreateClient();
+    http.Timeout = TimeSpan.FromSeconds(15);
+    using var content = new MultipartFormDataContent { { new ByteArrayContent(audio), "file", fileName } };
+    System.Net.Http.HttpResponseMessage response;
+    try { response = await http.PostAsync(voiceBase.TrimEnd('/') + "/vad/detect", content, cancellationToken); }
+    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+    catch { return 0; }
+    if (!response.IsSuccessStatusCode) return 0;
+    try
+    {
+        using var document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return document.RootElement.TryGetProperty("speechMs", out var speech) ? speech.GetInt32() : 0;
+    }
+    catch { return 0; }
+}
+
+/// <summary>
+/// Speaker verification for a voice turn (docs/voice-identity.md VI-1/VI-2):
+/// v1/v2 profile aware — Similarity is the max over the canonical anchor and the
+/// adaptive blend, so the owner's natural voice states stay recognized. HIGH-tier
+/// turns additionally measure quality (VAD) and enqueue an adaptive candidate —
+/// async, the turn NEVER waits for learning. Returns the soft accept + confidence.
+/// </summary>
+static async Task<(bool Verified, double Confidence)> VerifyTurnSpeakerAsync(
+    byte[] audio, List<double>? turnEmbedding, string? storedProfile, Guid userId,
+    IConfiguration configuration, IServiceProvider services,
+    VoiceAdaptationChannel adaptation, CancellationToken cancellationToken)
+{
+    var profile = SpeakerProfile.TryParse(storedProfile);
+    if (profile is null || turnEmbedding is null || turnEmbedding.Count == 0) return (false, 0.0);
+    var confidence = profile.Similarity(turnEmbedding);
+    var verified = SpeakerVerifier.Accept(confidence);
+    if (SpeakerProfile.Tier(confidence) == SpeakerConfidenceTier.High)
+    {
+        var speechMs = await MeasureSpeechMsAsync(audio, "turn.wav", configuration, services, cancellationToken);
+        if (SpeakerProfile.IsAdaptiveCandidate(confidence, speechMs))
+            adaptation.TryEnqueue(new AdaptiveCandidate(userId, turnEmbedding, speechMs, confidence, DateTimeOffset.UtcNow));
+    }
+    return (verified, confidence);
 }
 static async Task<List<double>?> EmbedSpeakerAudioAsync(byte[] audio, string fileName, IConfiguration configuration, IServiceProvider services, CancellationToken cancellationToken)
 {
