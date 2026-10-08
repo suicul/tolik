@@ -256,15 +256,23 @@ TOLIK needs credential → capability → Secret Manager (OS-protected) → op
 ## 11. Порядок, зависимости, решения
 
 ```text
-Phase A Capability Registry + gap-fix интент-путей   [независимо, первым]
-Phase B Autonomy Policy                              [A]
-Phase C Privilege Broker (C0 spike IPC)              [A, B]
-Phase D Self-Healing / Repair                        [A, B] (брокер опционально)
-Phase E Background Tasks v2 + Proactive              [A, B]
-Phase F Personality/Human-in-the-loop UX             [B] (+Cephalon Track 3)
-Phase G Emergency Stop                               [B, E]
-Phase H File/Network/Secret boundaries               [A]
-Phase I+ — Computer Use layers                       [docs/computer-use.md]
+Phase A Capability Registry + gap-fix интент-путей   DONE 09.10.2026 (commits
+    a352f68 + registry tests; GuardIntentCapability на всех 5 интент-путях;
+    ConfirmationStore.DeclaredRiskFor → реестр; /tasks execute не тронут)
+Phase B Autonomy Policy                              DONE 09.10.2026 (commit
+    affc51b; AutonomyPolicy.Decide детерминированный; wire-in audit-only
+    на /tasks execute; enforcement Notify/Confirm — E2/F)
+Phase C Privilege Broker (C0 spike IPC)              ПОСЛЕ Genesis (spike до)
+Phase D Self-Healing / Repair                        [A, B есть; D2 после Genesis]
+Phase E Background Tasks v2                          E-min DONE 09.10.2026
+    (commit affc51b: TaskLifecycle.TryResume Paused→Running, /pause /resume
+    API, DB-синк, аудит; TaskSteps/PAUSED_BY_RESTART — E2 после Genesis)
+Phase F Personality/Human-in-the-loop UX             [B есть; F после Genesis]
+Phase G Emergency Stop                               [B есть; G после Genesis]
+Phase H File/Network/Secret boundaries               file scopes — УЖЕ ЕСТЬ
+    (AgentPathGuard + TOLIK_ALLOWED_ROOTS); network/secret — после Genesis
+Phase I+ — Computer Use layers                       [docs/computer-use.md,
+    после Genesis]
 ```
 
 Решения ДО Genesis: A (реестр + gap-fix), B (autonomy — уже проектируется
