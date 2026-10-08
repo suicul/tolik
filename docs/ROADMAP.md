@@ -91,6 +91,13 @@ privacy/retention, recovery/диагностика, realtime, 20 тестов). 
 остальных. Живые голосовые тесты — отложены до выходных владельца; реализация
 идёт автономно по unit-тестам.
 
+## Track 9 — Jarvis Foundation: Governance + Computer Use (approved 08.10.2026) 🔲 plans done, no implementation (PRE-GENESIS)
+Two companion plans from owner directives, grounded in a full code audit (exp-9):
+- **docs/governance.md**: Capability Registry (единый источник: descriptors + declared-risk + escalation merge; **НАЙДЕН GAP — /chat//voice интент-пути зовут dispatcher БЕЗ AuthorizationPolicy, закрыть в Phase A**), Autonomy Policy (AUTONOMOUS/NOTIFY/CONFIRM/MFA_CONFIRM/DENY поверх существующей policy, context-aware, pre-authorized rules без blanket), Windows Privilege Broker (Named Pipes, typed capabilities, НЕ root shell, non-resident, Quest/Android без Windows privileges), Self-Healing/Repair (registered procedures only), Background Tasks v2 (TaskSteps, pause/resume, auth snapshot, PAUSED_BY_RESTART), Personality≠Authorization + human-in-the-loop UX, Emergency Stop (soft, не LOCKED), File/Network/Secret boundaries.
+- **docs/computer-use.md**: Computer Use Foundation (capture + Desktop Awareness → PC State), UI Observation (a11y/OCR/vision provider-replaceable, НЕ координаты), UI World Model, Closed-loop OBSERVE→AUTHORIZE→ACT→VERIFY, Sensitive UI + prompt injection через экран, Browser Automation (CDP), Skill Learning (SkillStore semantic, НЕ координаты; provenance/confidence/versioning/rollback/poisoning defense), Exploration Mode (SAFE reversible only), Demonstration Learning, Long-running Autonomous, Cephalon integration.
+- Порядок: A→B→(C,D,E,F,G,H)→CU-1..CU-10; ДО Genesis: A, B, минимум E/H; ПОСЛЕ: C, D2, E2, F, CU-3+.
+- НЕ имплементируется этим запросом; живые голосовые тесты — выходные владельца; Track 8 остаток (VI-3/VI-4) — следующая реализация.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
