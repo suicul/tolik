@@ -98,14 +98,11 @@ public sealed class ConfirmationStore
     public IReadOnlyList<PendingConfirmation> ListForTask(Guid taskId) =>
         _items.Values.Where(x => x.TaskId == taskId && !x.Consumed && !x.Expired).ToList();
 
-    /// <summary>Declares the default (declared) risk per capability (AGENTS.md §11).</summary>
-    public static ToolRiskLevel DeclaredRiskFor(AgentCapability capability) => capability switch
-    {
-        AgentCapability.ReadFile or AgentCapability.ListDirectory or AgentCapability.GetProcessStatus => ToolRiskLevel.ReadOnly,
-        AgentCapability.RunBuild or AgentCapability.RunTests or AgentCapability.RunProcess or AgentCapability.CancelTask or AgentCapability.PlaySound => ToolRiskLevel.LowRisk,
-        AgentCapability.WriteFile or AgentCapability.RunCodex or AgentCapability.RunOpenCode => ToolRiskLevel.Modify,
-        _ => ToolRiskLevel.Critical
-    };
+    /// <summary>
+    /// Declares the default (declared) risk per capability (AGENTS.md §11); delegates to
+    /// the Capability Registry (docs/governance.md §1) — the single source of declared risk.
+    /// </summary>
+    public static ToolRiskLevel DeclaredRiskFor(AgentCapability capability) => CapabilityRegistry.DeclaredRisk(capability);
 }
 
 /// <summary>Thrown inside the execute loop when a step needs explicit confirmation.</summary>

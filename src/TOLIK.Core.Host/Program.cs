@@ -300,6 +300,36 @@ static string ResolveAppAlias(string name) => name.Trim().ToLowerInvariant() swi
 };
 
 /// <summary>
+/// Light policy check on the intent paths (docs/governance.md §1 gap-fix): /chat,
+/// /voice simple-intents and /audio/play run the existing AuthorizationPolicy.Evaluate
+/// BEFORE dispatch (no lease/confirmation — direct intent execution is limited to the
+/// read-only/low-risk band; Modify+ requires the confirmation flow). Returns null when
+/// execution may proceed; the capability-advertisement check in AgentCommandDispatcher
+/// stays in front of the actual dispatch — the guard is additional, not a replacement.
+/// </summary>
+static IResult? GuardIntentCapability(SessionPrincipal? principal, AgentCapability capability, string resource, IServiceProvider services)
+{
+    var securityState = services.GetRequiredService<CoreSecurityState>();
+    var router = services.GetRequiredService<ModelRouter>();
+    var request = new AuthorizationRequest(
+        principal,
+        capability,
+        ConfirmationStore.DeclaredRiskFor(capability),
+        resource,
+        resource,
+        ConfirmationValid: false,
+        CoreLocked: securityState.IsLocked,
+        OfflineMode: router.IsOfflineMode);
+    var decision = AuthorizationPolicy.Evaluate(request);
+    return decision switch
+    {
+        AuthorizationDecision.Allow => null,
+        AuthorizationDecision.ConfirmationRequired => Results.Problem("intent action requires confirmation; direct intent execution is limited to low-risk", statusCode: StatusCodes.Status403Forbidden),
+        _ => Results.Problem("intent action denied by policy", statusCode: StatusCodes.Status403Forbidden)
+    };
+}
+
+/// <summary>
 /// Local-network check for the dev auto-token endpoint. Inside Docker the host's
 /// loopback arrives NATed as a bridge/gateway address, so plain loopback matching
 /// would reject legitimate same-machine callers. Loopback + RFC1918 is the
@@ -346,6 +376,9 @@ static async Task<IResult?> ProcessSimpleIntentAsync(
             if (string.IsNullOrWhiteSpace(appName) || appName.Length > 256 || appName.Contains('\\') || appName.Contains('/'))
                 return Results.Ok(new VoiceTurnResponse(appName, "Не понятно, какое приложение открыть.", VoiceMode.Normal, null, null, null));
             appName = ResolveAppAlias(appName);
+            // Voice intent paths get the policy check BEFORE dispatch (governance §1 gap-fix).
+            var guard = GuardIntentCapability(principal, AgentCapability.RunProcess, appName, context.RequestServices);
+            if (guard is not null) return guard;
             var dispatcher = new AgentCommandDispatcher(context.RequestServices.GetRequiredService<AgentConnectionRegistry>());
             try
             {
@@ -1544,6 +1577,11 @@ app.MapPost("/audio/play", async (PlaySoundRequest request, HttpContext context,
         return Results.StatusCode(StatusCodes.Status429TooManyRequests);
     }
 
+    // Intent path gets the policy check BEFORE dispatch (governance §1 gap-fix);
+    // resource mirrors the dispatcher's binding (category;name).
+    var guard = GuardIntentCapability(principal, AgentCapability.PlaySound, $"{request.Category};{request.Name}", context.RequestServices);
+    if (guard is not null) return guard;
+
     try
     {
         var result = await dispatcher.ExecuteAsync(principal.UserId, AgentCapability.PlaySound, $"{request.Category};{request.Name}", cancellationToken);
@@ -1694,6 +1732,9 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
             if (appName.Contains("..", StringComparison.Ordinal) || appName.Contains('\\') || appName.Contains('/'))
                 return Results.BadRequest(new { error = "invalid_app_name" });
             appName = ResolveAppAlias(appName);
+            // Intent paths get the policy check BEFORE dispatch (governance §1 gap-fix).
+            var guard = GuardIntentCapability(principal, AgentCapability.RunProcess, appName, context.RequestServices);
+            if (guard is not null) return guard;
             try
             {
                 var agentResult = await dispatcher.ExecuteAsync(principal.UserId, AgentCapability.RunProcess, appName, cancellationToken);
@@ -1716,6 +1757,9 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
             if (projectPath.Length == 0 || projectPath.Length > 512) return Results.BadRequest(new { error = "invalid_project_path" });
             var capability = intent.Kind == ChatIntentKind.BuildProject ? AgentCapability.RunBuild : AgentCapability.RunTests;
             var label = intent.Kind == ChatIntentKind.BuildProject ? "РЎР±РѕcЂРєР°" : "РўРµcc‚c‹";
+            // Intent paths get the policy check BEFORE dispatch (governance §1 gap-fix).
+            var guard = GuardIntentCapability(principal, capability, projectPath, context.RequestServices);
+            if (guard is not null) return guard;
             try
             {
                 var result = await dispatcher.ExecuteAsync(principal.UserId, capability, projectPath, cancellationToken);
