@@ -118,6 +118,31 @@ SE-4 protected расширение; ПОСЛЕ: SE-2/3 лаборатория/�
 DISCOVERED..ROLLED_BACK, PostgreSQL, semantic-НЕ-координаты, Memory≠Skill≠Task≠
 Authorization, application-specific policy) — docs/computer-use.md §16.
 
+## Track 11 — Mind / Internal Life (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+Full plan: **docs/mind.md** (директива 09.10.2026). Два цикла: реактивная
+когниция (есть) + АВТОНОМНАЯ (новое): TOLIK существует в периоды без диалога.
+MindState — подсистемы (Affect/Motivation/Attention/Curiosity/Activity/Social/
+Goal/Expectation/Energy/Boredom/Uncertainty/Reflection/Initiative), НЕ гигантский
+мутабельный объект. **Boredom — РЕАЛЬНЫЙ механизм** (continuous 0-1 из
+измеримых условий, TOLIK_MIND_* конфиг, НЕ таймер): создаёт МОТИВАЦИЮ не
+permission (governance остаётся). DriveSystem (15 drives) → Motivation →
+Candidate → Utility → AutonomyPolicy → Authorization → Task. Curiosity/Surprise
+(expectation-vs-observation над baseline SE-1)/Uncertainty (явное «не знаю»)/
+Attention (ограниченный ресурс, прерывается разговором). Event-driven (НИКОГДА
+while(true) askLLM): MindEvent bus → state → deterministic evaluation → LLM
+только когда нужно. Cognitive routing Tier 0-3 (deterministic/tiny/normal/
+expensive). Emotion ИЗ ПЕРЕХОДОВ (не LLM-вывод) + momentum + Emotion≠Personality
++ Mood/Temperament (PersonalContextStore). Self-Model (≠Memory/Skill/Task/
+Authorization). Activity selection: «просто idle — тоже правильный результат».
+REST/LOW/NORMAL/FOCUSED/INTENSE + Energy (M8 gaming→suspend). Journal
+(structured operational history, НЕ chain-of-thought) — «Чем занимался пока
+меня не было?» из реального состояния. Core Values (immutable, выше personality)
++ Self-preservation ОГРАНИЧЕН (owner control абсолютен) + Continuity (identity
+Core-backed, модель заменяема) + Genesis seed. Anti-loop: бюджеты/лимиты/квоты.
+Mind Inspector + explainable selection (structured decision trace, не CoT).
+Фазы MI-0..MI-9; pre-Genesis: MI-0..2 (deterministic, read-only) + SE-0;
+основное (автономная активность/proactive/генерация целей) — после Genesis.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
