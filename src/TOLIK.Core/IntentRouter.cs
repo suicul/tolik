@@ -13,7 +13,8 @@ public enum ChatIntentKind
     RecallMemory,        // что я говорил про X / помнишь X → поиск по памяти
     BuildProject,       // собери проект X → RunBuild через Агента
     TestProject,        // запусти тесты X → RunTests через Агента
-    SwitchVoiceMode     // ночной/игровой/обычный/тактический режим → VoiceRuntimeState
+    SwitchVoiceMode,     // ночной/игровой/обычный/тактический режим → VoiceRuntimeState
+    EnrollTrustedPerson  // запомни голос <name> / это моя <relation> <name> → voice enrollment (VI-4)
 }
 
 public sealed record ChatIntent(ChatIntentKind Kind, string Argument);
@@ -45,6 +46,34 @@ public static partial class IntentRouter
 
     [GeneratedRegex(@"(?:это\s+было\s+смешно|было\s+смешно|это\s+смешно|ржу|смеюсь)", RegexOptions.IgnoreCase)]
     private static partial Regex FunnyRegex();
+
+    // --- VI-4: conversational trusted-person enrollment (docs/voice-identity.md §5) ---
+    // Kinship term list shared by both enrollment patterns (const concat keeps
+    // GeneratedRegex source generation happy).
+    private const string RelationTerms =
+        @"жен[ауы]|муж[ауы]?|мам[ауы]|пап[ауы]|сын[ауы]?|дочь|дочк[ауи]|брат[ауы]?|сестр[ауы]|бабушк[ауи]|дедушк[ауи]|тёт[яуи]|дяд[яюи]|друг[ауы]?|подруг[ауи]|свекровь|тещ[ауи]|племянник\w*|родственник\w*";
+
+    // «это моя <relation> <name>» — the kinship term + a spoken name are required: a bare
+    // relation ("это моя мама") or a possessive without one ("это моя машина") must stay
+    // Conversation, so the relation form only classifies with a name tail present.
+    [GeneratedRegex(@"(?:это\s+)?(?:мо[яю]|моего|моей|наш\w*)\s*(?:" + RelationTerms + @")\s+(?<name>\S.*)", RegexOptions.IgnoreCase)]
+    private static partial Regex EnrollRelationRegex();
+
+    // «запомни голос <name>» / «запомни голос» (name optional → Argument empty → the
+    // caller asks). The end-anchored tail keeps "запомни голосовой пароль" out of the
+    // enrollment path (only whitespace continues the marker).
+    [GeneratedRegex(@"запомни\s+голос(?:\s+\S.*)?$", RegexOptions.IgnoreCase)]
+    private static partial Regex EnrollVoiceNameRegex();
+
+    // «запомни её/его голос» (plan §5: «это Мария, запомни её голос») — with or without
+    // a spoken subject before the request clause.
+    [GeneratedRegex(@"запомни\s+(?:е[ё]|его)\s+голос", RegexOptions.IgnoreCase)]
+    private static partial Regex EnrollVoicePronounRegex();
+
+    // Spoken-subject prefix inside the extracted target ("моя жена Мария" → "Мария";
+    // "моя мама" → "" — nothing name-like left → the caller asks).
+    [GeneratedRegex(@"(?:мо[яю]|моего|моей|наш\w*)?\s*(?:" + RelationTerms + @")\s*", RegexOptions.IgnoreCase)]
+    private static partial Regex EnrollSubjectPrefixRegex();
 
     public static ChatIntent Classify(string message)
     {
@@ -102,6 +131,11 @@ public static partial class IntentRouter
             return new(ChatIntentKind.SwitchVoiceMode, "Gaming");
         if (text.Contains("режим", StringComparison.OrdinalIgnoreCase) && text.Contains("обычн", StringComparison.OrdinalIgnoreCase))
             return new(ChatIntentKind.SwitchVoiceMode, "Normal");
+
+        // Voice enrollment of a trusted person (docs/voice-identity.md §5, VI-4): checked
+        // BEFORE StoreMemory ("запомни ...") — more specific first, like семейный мем.
+        if (TryClassifyEnrollTrustedPerson(text) is { } enroll)
+            return enroll;
 
         if (StoreMemoryRegex().Match(text) is { Success: true } store)
             return new(ChatIntentKind.StoreMemory, store.Groups[1].Value.Trim());
@@ -167,6 +201,93 @@ public static partial class IntentRouter
             or "спасибо" or "благодарю" or "пожалуйста" or "пока"
             or "да" or "нет" or "ок" or "окей" or "хорошо" or "понятно" or "ага" or "угу" or "ладно"
             or "hello" or "hi" or "hey" or "thanks" or "thank" or "bye" or "yes" or "no" or "ok" or "okay" or "good" => true,
+        _ => false,
+    };
+
+    // --- VI-4: conversational trusted-person enrollment (docs/voice-identity.md §5) ---
+
+    /// <summary>
+    /// Deterministic EnrollTrustedPerson classification (docs/voice-identity.md §5, VI-4).
+    /// Patterns: «запомни голос <name>», «это моя <relation> <name>»,
+    /// «запомни её/его голос». "запомни голос" без name → Argument empty → the caller
+    /// asks. Null when nothing enrollment-shaped matched — the caller falls through to
+    /// the normal classification (a bare relation or a verb tail is speech, not enrollment).
+    /// </summary>
+    private static ChatIntent? TryClassifyEnrollTrustedPerson(string text)
+    {
+        // «запомни голос <name>» / «запомни голос» (без name → Argument empty → caller asks).
+        if (EnrollVoiceNameRegex().IsMatch(text))
+        {
+            var marker = "запомни голос";
+            var index = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            var direct = text[(index + marker.Length)..].Trim();
+            if (direct.Length > 0)
+                return new(ChatIntentKind.EnrollTrustedPerson, ExtractSubjectName(direct));
+            // "…, запомни голос" — a spoken subject may precede the marker; extract it,
+            // otherwise the Argument stays empty (the caller asks).
+            var subject = index > 0 ? text[..index].TrimEnd(' ', ',').Trim() : string.Empty;
+            return new(ChatIntentKind.EnrollTrustedPerson, ExtractSubjectName(subject));
+        }
+        // «запомни её/его голос» (plan §5: «это Мария, запомни её голос») — with or
+        // without a spoken subject before the request clause.
+        if (EnrollVoicePronounRegex().IsMatch(text))
+        {
+            var cut = text.IndexOf("запомни", StringComparison.OrdinalIgnoreCase);
+            var subject = cut > 0 ? text[..cut].TrimEnd(' ', ',').Trim() : string.Empty;
+            return new(ChatIntentKind.EnrollTrustedPerson, ExtractSubjectName(subject));
+        }
+        // «это моя <relation> <name>» — the kinship term + a spoken name; a bare relation
+        // ("это моя мама") or a verb tail ("мама сидит рядом") is speech, not enrollment
+        // → null (falls through to the normal classification).
+        if (EnrollRelationRegex().Match(text) is { Success: true } relation)
+        {
+            var raw = relation.Groups["name"].Value;
+            var cut = raw.IndexOf("запомни", StringComparison.OrdinalIgnoreCase);
+            var name = NormalizeTargetName(cut >= 0 ? raw[..cut] : raw, maxWords: 2);
+            return name.Length == 0 ? null : new(ChatIntentKind.EnrollTrustedPerson, name);
+        }
+        return null;
+    }
+
+    /// <summary>Strips the spoken addressing ("это", possessive + kinship term) from a
+    /// spoken subject and bounds the remainder to a plausible name (≤2 words, not a verb
+    /// tail; a lone possessive pronoun is not a name). Empty when nothing name-like
+    /// remains — the caller asks (Argument empty).</summary>
+    private static string ExtractSubjectName(string subject)
+    {
+        var value = subject.Trim();
+        if (value.StartsWith("это", StringComparison.OrdinalIgnoreCase))
+            value = value[3..].TrimStart(' ', ',').Trim();
+        if (EnrollSubjectPrefixRegex().Match(value) is { Success: true } prefix && prefix.Length > 0)
+            value = value[prefix.Length..].TrimStart(' ', ',').Trim();
+        return NormalizeTargetName(value, maxWords: 2);
+    }
+
+    /// <summary>Bounds a captured name: at most <paramref name="maxWords"/> words (a name
+    /// is 1–2 words; longer tails are speech — the caller asks instead), not a verb tail.</summary>
+    private static string NormalizeTargetName(string value, int maxWords)
+    {
+        var cleaned = value.Trim(' ', ',', '-', '—', ':');
+        var words = cleaned.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (words.Length < 1 || words.Length > maxWords) return string.Empty;
+        if (IsCommonVerb(words[0])) return string.Empty;
+        if (words.Length == 1 && IsPossessivePronoun(words[0])) return string.Empty;
+        return cleaned;
+    }
+
+    /// <summary>Common present-tense verbs — "мама сидит рядом" is speech, not a name tail.</summary>
+    private static bool IsCommonVerb(string word) => word.ToLowerInvariant() switch
+    {
+        "сидит" or "стоит" or "работает" or "живёт" or "живет" or "говорит" or "любит" or "спит"
+            or "умерла" or "родилась" or "пришла" or "ушла" or "приехала" or "уехала" or "готовит"
+            or "звонит" or "позвонит" or "болеет" or "лежит" or "ждёт" or "ждет" => true,
+        _ => false,
+    };
+
+    /// <summary>A lone possessive pronoun is not a name (no kinship term and no name spoken).</summary>
+    private static bool IsPossessivePronoun(string word) => word.ToLowerInvariant() switch
+    {
+        "моя" or "мой" or "мою" or "моего" or "моей" or "наша" or "наш" or "наши" or "наших" => true,
         _ => false,
     };
 

@@ -68,6 +68,11 @@ builder.Services.AddHostedService<ModelPrewarmService>();
 builder.Services.AddSingleton<VoiceAdaptationChannel>();
 builder.Services.AddSingleton<VoiceAdaptationPolicy>();
 builder.Services.AddHostedService<VoiceAdaptationService>();
+// Voice enrollment state machines (docs/voice-identity.md VI-3/VI-4): pure, thread-safe
+// DI singletons — per-owner genesis voice enrollment and the trusted-person
+// active-enrollment map (TTL 5 min). Storage stays in DurableMemoryStore.
+builder.Services.AddSingleton<GenesisVoiceEnrollment>();
+builder.Services.AddSingleton<TrustedPersonEnrollment>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
@@ -762,6 +767,159 @@ app.MapGet("/genesis/identity", async (HttpContext context, IdentityService iden
             lifecycleState = identityRow.LifecycleState,
             ownerIdentity = identityRow.OwnerIdentity
         });
+});
+
+// Genesis Owner Voice Enrollment (docs/voice-identity.md §4, VI-3): a SEPARATE
+// post-ceremony gate. The existing genesis ceremony completes WITHOUT the voice phase —
+// its transaction semantics are untouched; this flow is its own MFA-gated phase. The
+// LIFETIME dev-token gating pattern (docs/lifecycle.md) could later require voice
+// enrollment the same way dev tokens are blocked, but that gating is deliberately NOT
+// implemented now. Phrase texts are fixed public prompts (not secrets); only embeddings
+// are stored — raw audio never persists (§8).
+app.MapGet("/genesis/voice/phrases", async (HttpContext context, IdentityService identity, GenesisVoiceEnrollment enrollment, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.phrases", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    // Strong auth (MFA) — the /genesis/ceremony pattern: mfaDeviceId + mfaCode query
+    // parameters verified per request (POST endpoints carry them in the body; a GET has
+    // no body, so the query string is the carrier — same VerifyMfaAsync gate).
+    if (!Guid.TryParse(context.Request.Query["mfaDeviceId"].FirstOrDefault(), out var mfaDeviceId))
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.phrases", "DENY", "mfa_required", cancellationToken);
+        return Results.Json(new { error = "mfa_required", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    var mfa = await identity.VerifyMfaAsync(mfaDeviceId, context.Request.Query["mfaCode"].FirstOrDefault() ?? string.Empty, cancellationToken);
+    if (!mfa.Success)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.phrases", "DENY", "mfa_failed", cancellationToken);
+        return Results.Json(new { error = "mfa_failed", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    // Phrase texts are fixed prompts — not secret; indices map to /genesis/voice/sample.
+    return Results.Ok(new
+    {
+        phrases = GenesisVoicePhrases.Phrases.Select((text, index) => new { index, text }).ToArray()
+    });
+});
+app.MapPost("/genesis/voice/sample", async (HttpContext context, IdentityService identity, IConfiguration configuration, DurableMemoryStore durableMemory, GenesisVoiceEnrollment enrollment, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    // Continuation endpoint of the MFA-gated genesis voice flow: the flow entry (phrases)
+    // and finalization (complete/reset) carry the MFA gates; each sample upload is
+    // Owner-authenticated and audited (plan §4 "та же MFA-сессия владельца").
+    // Quality gate per sample: VAD speechMs ≥ MinAdaptiveQualitySpeechMs AND embedding
+    // extracted; consistency gate: cosine ≥ 0.30 to every accepted sample.
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAuthorizationAsync(correlationId, "genesis.voice.sample", "DENY", "owner_role_required", principal, null, null, null, "denied", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    if (!context.Request.HasFormContentType || context.Request.Form.Files.Count == 0)
+        return Results.BadRequest(new { error = "audio_required" });
+    if (!int.TryParse(context.Request.Form["phraseIndex"].ToString(), out var phraseIndex))
+        return Results.BadRequest(new { error = "invalid_phrase_index" });
+    var file = context.Request.Form.Files[0];
+    await using var buffer = new MemoryStream();
+    await file.CopyToAsync(buffer, cancellationToken);
+    var audio = buffer.ToArray();
+    var embedding = await EmbedSpeakerAudioAsync(audio, file.FileName, configuration, context.RequestServices, cancellationToken);
+    if (embedding is null)
+        return Results.Json(new { error = "speaker_not_configured" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+    // Dimension guard: a mismatched upload fails cleanly (400) instead of a mid-gate 500.
+    var acceptedDimension = enrollment.AcceptedEmbeddingDimension;
+    if (embedding.Count > 0 && acceptedDimension is int dimension && embedding.Count != dimension)
+        return Results.BadRequest(new { error = "embedding_mismatch" });
+    var speechMs = await MeasureSpeechMsAsync(audio, file.FileName, configuration, context.RequestServices, cancellationToken);
+    var (accepted, reason) = enrollment.AddSample(phraseIndex, embedding, speechMs, DateTimeOffset.UtcNow);
+    if (accepted)
+    {
+        // Persist the accumulated set as ONE memory item (delete+add — the existing
+        // speaker.profile storage pattern; embeddings only, raw audio never stored).
+        foreach (var existing in await durableMemory.SearchBySourceAsync(principal.UserId, "genesis.voice.enrollment", cancellationToken))
+            await durableMemory.DeleteAsync(principal.UserId, existing.Id, cancellationToken);
+        var stored = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            samples = enrollment.Snapshot().Select(s => new { phraseIndex = s.PhraseIndex, embedding = s.Embedding.ToArray(), speechMs = s.SpeechMs }).ToArray()
+        });
+        await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, stored, "genesis.voice.enrollment", 1.0, cancellationToken);
+    }
+    await audit.WriteAuthorizationAsync(correlationId, "genesis.voice.sample", accepted ? "ALLOW" : "DENY",
+        $"phrase_index:{phraseIndex};reason:{reason};accepted_count:{enrollment.AcceptedCount}", principal, null, null, null,
+        accepted ? "accepted" : "rejected", cancellationToken);
+    return Results.Ok(new { accepted, reason, acceptedCount = enrollment.AcceptedCount, complete = enrollment.IsComplete });
+});
+app.MapPost("/genesis/voice/complete", async (GenesisVoiceMfaRequest? request, HttpContext context, IdentityService identity, DurableMemoryStore durableMemory, GenesisVoiceEnrollment enrollment, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    // Finalization of the owner voice enrollment: ≥4 of 5 accepted phrases → the canonical
+    // v2 profile ("speaker.profile", delete+add) → the machine is cleared (a future
+    // re-enrollment starts fresh). The ceremony itself completed earlier without voice.
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.enrollment", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    if (request is null || request.MfaDeviceId is null || request.MfaDeviceId == Guid.Empty)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.enrollment", "DENY", "mfa_required", cancellationToken);
+        return Results.Json(new { error = "mfa_required", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    var mfa = await identity.VerifyMfaAsync(request.MfaDeviceId.Value, request.MfaCode ?? string.Empty, cancellationToken);
+    if (!mfa.Success)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.enrollment", "DENY", "mfa_failed", cancellationToken);
+        return Results.Json(new { error = "mfa_failed", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    if (!enrollment.IsComplete)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.enrollment", "DENY", "voice_enrollment_incomplete", cancellationToken);
+        return Results.Json(new { error = "voice_enrollment_incomplete", acceptedCount = enrollment.AcceptedCount, correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    var canonical = enrollment.BuildProfile()!;
+    foreach (var existing in await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken))
+        await durableMemory.DeleteAsync(principal.UserId, existing.Id, cancellationToken);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, canonical.ToJson(), "speaker.profile", 1.0, cancellationToken);
+    enrollment.Reset();
+    await audit.WriteAsync(correlationId, "genesis.voice.enrollment", "ALLOW", $"canonical_count:{canonical.Canonical.Count}", cancellationToken);
+    return Results.Ok(new { enrolled = true, canonicalCount = canonical.Canonical.Count });
+});
+app.MapPost("/genesis/voice/reset", async (GenesisVoiceMfaRequest? request, HttpContext context, IdentityService identity, DurableMemoryStore durableMemory, GenesisVoiceEnrollment enrollment, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    // Owner retry of the whole set: the machine clears and the accumulated samples are
+    // deleted (never silently kept — recovery/diagnostics §9).
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.reset", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    if (request is null || request.MfaDeviceId is null || request.MfaDeviceId == Guid.Empty)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.reset", "DENY", "mfa_required", cancellationToken);
+        return Results.Json(new { error = "mfa_required", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    var mfa = await identity.VerifyMfaAsync(request.MfaDeviceId.Value, request.MfaCode ?? string.Empty, cancellationToken);
+    if (!mfa.Success)
+    {
+        await audit.WriteAsync(correlationId, "genesis.voice.reset", "DENY", "mfa_failed", cancellationToken);
+        return Results.Json(new { error = "mfa_failed", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    enrollment.Reset();
+    foreach (var item in await durableMemory.SearchBySourceAsync(principal.UserId, "genesis.voice.enrollment", cancellationToken))
+        await durableMemory.DeleteAsync(principal.UserId, item.Id, cancellationToken);
+    await audit.WriteAsync(correlationId, "genesis.voice.reset", "ALLOW", "voice_enrollment_reset", cancellationToken);
+    return Results.Ok(new { reset = true });
 });
 
 app.MapPost("/agents/connect", async (AgentRegistration registration, HttpContext context, IdentityService identity, AgentConnectionRegistry registry, TOLIK.Contracts.Transport.PeerRegistry peerKeys, AuditWriter audit, CancellationToken cancellationToken) =>
@@ -2122,6 +2280,178 @@ app.MapPost("/voice/identity/delete", async (VoiceIdentityUserRequest? request, 
     await audit.WriteAsync(correlationId, "voice.speaker.profile_delete", "ALLOW", $"user:{targetUserId:D};deleted:{deleted}", cancellationToken);
     return Results.Ok(new { deleted });
 });
+// Conversational trusted-person enrollment (docs/voice-identity.md §5-§6, VI-4): the
+// OWNER speaks («Толик, это моя жена Мария, запомни её голос») → the client posts the
+// target's sample clips here together with the OWNER's verification clip (named "caller"
+// form file). Auth + speaker gate: the caller's turn must be Owner-role AND speaker-
+// verified with tier High — re-verified via the stored owner profile (EmbedSpeakerAudioAsync
+// + Similarity + Tier, the existing helpers). Without Owner role or low tier → 403
+// owner_role_required (+ audit DENY) — unknown voices NEVER enroll (owner req #17).
+// The target NEVER receives the Owner role and never gains permissions beyond the role —
+// voice recognition is a hint only (§13/§7). No transcripts/embeddings in audit
+// (counts/names/tiers only — the target name is not a secret); only embeddings stored.
+app.MapPost("/voice/person/enroll", async (HttpContext context, IdentityService identity, IConfiguration configuration, DurableMemoryStore durableMemory, IDbContextFactory<TolikDbContext> factory, TrustedPersonEnrollment enrollment, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "DENY", "owner_role_required", principal, null, null, null, "denied", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    if (!context.Request.HasFormContentType)
+        return Results.BadRequest(new { error = "audio_required" });
+    var name = context.Request.Form["name"].ToString().Trim();
+    if (name.Length == 0 || name.Length > 128)
+        return Results.BadRequest(new { error = "name_required" });
+    var role = context.Request.Form["role"].ToString().Trim().ToLowerInvariant() switch
+    {
+        "trustedguest" => "TrustedGuest",
+        "family" => "Family",
+        _ => null
+    };
+    // Owner is a hard reject (the state machine throws — explicit, owner req #16).
+    if (role is null)
+        return Results.BadRequest(new { error = "invalid_role" });
+    var callerFile = context.Request.Form.Files["caller"];
+    var sampleFiles = context.Request.Form.Files
+        .Where(f => !string.Equals(f.Name, "caller", StringComparison.OrdinalIgnoreCase))
+        .Take(TrustedPersonEnrollment.MaxSamples).ToList();
+    if (callerFile is null || sampleFiles.Count == 0)
+        return Results.BadRequest(new { error = "audio_required" });
+
+    // Speaker gate (strong): re-verify the CALLER against the stored owner profile —
+    // tier High required (docs/voice-identity.md §5: the enrollment session can only be
+    // opened by a verified Owner turn; an unknown speaker cannot even open one).
+    var callerProfiles = await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken);
+    if (callerProfiles.Count == 0)
+    {
+        await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "DENY", "owner_voice_not_enrolled", principal, null, null, null, "denied", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    await using var callerBuffer = new MemoryStream();
+    await callerFile.CopyToAsync(callerBuffer, cancellationToken);
+    var callerEmbedding = await EmbedSpeakerAudioAsync(callerBuffer.ToArray(), "caller.wav", configuration, context.RequestServices, cancellationToken);
+    if (callerEmbedding is null || callerEmbedding.Count == 0)
+    {
+        var gateError = callerEmbedding is null ? "speaker_not_configured" : "audio_too_short";
+        await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "DENY", gateError, principal, null, null, null, "denied", cancellationToken);
+        return callerEmbedding is null
+            ? Results.Json(new { error = gateError }, statusCode: StatusCodes.Status503ServiceUnavailable)
+            : Results.BadRequest(new { error = gateError });
+    }
+    var callerProfile = SpeakerProfile.TryParse(callerProfiles[0].Content);
+    var callerSimilarity = callerProfile is null ? 0.0 : callerProfile.Similarity(callerEmbedding);
+    if (callerProfile is null || SpeakerProfile.Tier(callerSimilarity) != SpeakerConfidenceTier.High)
+    {
+        await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "DENY", $"owner_tier_low:{SpeakerProfile.Tier(callerSimilarity)}", principal, null, null, null, "denied", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    // Resolve the target user by name: a stored "voice.person.enrollment" mapping
+    // (Private, owner-scoped) keeps name→userId stable so re-enrollment replaces instead
+    // of duplicating; otherwise a user row is created with the requested role (never
+    // Owner — the state machine already rejected it). TolikUser has no name column, so
+    // the durable-memory mapping IS the find-by-name mechanism.
+    Guid targetUserId = Guid.Empty;
+    MemoryItem? mapping = null;
+    foreach (var item in await durableMemory.SearchBySourceAsync(principal.UserId, "voice.person.enrollment", cancellationToken))
+    {
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(item.Content);
+            var root = document.RootElement;
+            if (root.TryGetProperty("name", out var nameElement) && root.TryGetProperty("userId", out var userElement) &&
+                string.Equals(nameElement.GetString(), name, StringComparison.OrdinalIgnoreCase))
+            {
+                mapping = item;
+                targetUserId = userElement.GetGuid();
+                break;
+            }
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Unmappable rows are skipped (defensive parse of own storage, TryParse style).
+        }
+    }
+    if (mapping is null)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var user = new TolikUser { Id = Guid.NewGuid(), Role = role, CreatedAt = DateTimeOffset.UtcNow };
+        db.Users.Add(user);
+        await db.SaveChangesAsync(cancellationToken);
+        targetUserId = user.Id;
+    }
+    var mappingJson = System.Text.Json.JsonSerializer.Serialize(new { name, userId = targetUserId, role });
+    if (mapping is not null)
+        await durableMemory.DeleteAsync(principal.UserId, mapping.Id, cancellationToken);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, mappingJson, "voice.person.enrollment", 1.0, cancellationToken);
+
+    // Household distinctness set: EVERY existing speaker profile EXCEPT the target's own
+    // (the target's old profile is replaced on completion — re-enrollment of the same
+    // person must stay possible; distinctness protects different-person collisions only).
+    var householdVectors = new List<IReadOnlyList<double>>();
+    foreach (var profile in await durableMemory.SearchBySourceAsync(principal.UserId, "speaker.profile", cancellationToken))
+    {
+        var parsed = SpeakerProfile.TryParse(profile.Content);
+        if (parsed is not null) householdVectors.Add(parsed.CanonicalMean);
+    }
+    await using var householdDb = await factory.CreateDbContextAsync(cancellationToken);
+    var otherUserIds = await householdDb.Users.AsNoTracking()
+        .Where(x => x.Id != principal.UserId && x.Id != targetUserId && !x.Revoked)
+        .Select(x => x.Id).ToListAsync(cancellationToken);
+    foreach (var otherUserId in otherUserIds)
+        foreach (var profile in await durableMemory.SearchBySourceAsync(otherUserId, "speaker.profile", cancellationToken))
+        {
+            var parsed = SpeakerProfile.TryParse(profile.Content);
+            if (parsed is not null) householdVectors.Add(parsed.CanonicalMean);
+        }
+
+    // Per-sample gates: quality + consistency + household distinctness (state machine).
+    enrollment.Start(principal.UserId, name, role, DateTimeOffset.UtcNow);
+    var embedded = new List<(IReadOnlyList<double> Embedding, int SpeechMs)>();
+    var reasons = new List<string>();
+    foreach (var file in sampleFiles)
+    {
+        await using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, cancellationToken);
+        var audio = buffer.ToArray();
+        var embedding = await EmbedSpeakerAudioAsync(audio, file.FileName, configuration, context.RequestServices, cancellationToken);
+        if (embedding is null) { reasons.Add("speaker_not_configured"); continue; }
+        if (embedding.Count == 0) { reasons.Add("quality_low"); continue; }
+        embedded.Add((embedding, await MeasureSpeechMsAsync(audio, file.FileName, configuration, context.RequestServices, cancellationToken)));
+    }
+    if (embedded.Count > 0)
+    {
+        // Multi-sample pattern (like /voice/speaker/enroll): a dimension mismatch across
+        // clips fails cleanly (400) instead of a mid-gate 500.
+        var dimension = embedded[0].Embedding.Count;
+        if (embedded.Any(e => e.Embedding.Count != dimension))
+            return Results.BadRequest(new { error = "embedding_mismatch" });
+    }
+    var acceptedCount = 0;
+    foreach (var (embedding, speechMs) in embedded)
+    {
+        var (accepted, reason) = enrollment.AddSample(principal.UserId, embedding, speechMs, DateTimeOffset.UtcNow, householdVectors);
+        if (accepted) acceptedCount++;
+        else reasons.Add(reason);
+    }
+    if (!enrollment.IsComplete(principal.UserId))
+    {
+        await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "DENY", $"voice_enrollment_incomplete;target:{name};accepted:{acceptedCount}", principal, null, null, null, "denied", cancellationToken);
+        return Results.Json(new { error = "voice_enrollment_incomplete", acceptedCount, reasons }, statusCode: StatusCodes.Status400BadRequest);
+    }
+    var canonical = enrollment.BuildProfile(principal.UserId)!;
+    // Store the canonical profile for THE TARGET user (delete+add — the existing
+    // speaker.profile storage pattern; re-enrollment replaces).
+    foreach (var existing in await durableMemory.SearchBySourceAsync(targetUserId, "speaker.profile", cancellationToken))
+        await durableMemory.DeleteAsync(targetUserId, existing.Id, cancellationToken);
+    await durableMemory.AddAsync(targetUserId, MemoryScope.Private, canonical.ToJson(), "speaker.profile", 1.0, cancellationToken);
+    enrollment.Remove(principal.UserId);
+    await audit.WriteAuthorizationAsync(correlationId, "family.voice.enrollment", "ALLOW", $"owner:{principal.UserId:D};target:{name};role:{role}", principal, null, null, null, "enrolled", cancellationToken);
+    return Results.Ok(new { enrolled = true, name, role, samples = acceptedCount });
+});
 static async Task<List<double>?> EmbedSpeakerSampleAsync(Microsoft.AspNetCore.Http.IFormFile file, IConfiguration configuration, IServiceProvider services, CancellationToken cancellationToken)
 {
     if (file is null) return new List<double>();
@@ -2526,6 +2856,7 @@ public sealed record ModelPreferenceRequest(string? Mode);
 public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
 public sealed record VoiceIdentityUserRequest(Guid? UserId);
+public sealed record GenesisVoiceMfaRequest(Guid? MfaDeviceId, string? MfaCode);
 
 public sealed class AgentConnectionRegistry(
     TOLIK.Contracts.Transport.CoreTransportKeys? transportKeys = null)
