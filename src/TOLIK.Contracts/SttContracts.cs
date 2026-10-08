@@ -60,4 +60,6 @@ public sealed record VoiceTurnResponse(
     string? ContentType,
     string? Model,
     bool SpeakerVerified = false,
-    double SpeakerConfidence = 0);
+    double SpeakerConfidence = 0,
+    string SpeakerTier = "none",
+    string SpeakerReason = "not_evaluated");

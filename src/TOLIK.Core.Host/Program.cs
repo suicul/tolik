@@ -66,6 +66,7 @@ builder.Services.AddHostedService<ModelPrewarmService>();
 // Voice identity (docs/voice-identity.md VI-2): adaptive learning runs OUTSIDE the
 // turn path; the channel is the only hand-off (bounded, non-blocking).
 builder.Services.AddSingleton<VoiceAdaptationChannel>();
+builder.Services.AddSingleton<VoiceAdaptationPolicy>();
 builder.Services.AddHostedService<VoiceAdaptationService>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
@@ -1672,7 +1673,7 @@ app.MapPost("/voice/transcribe", async (HttpContext context, IdentityService ide
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (stt): {result.Text}", "voice.stt", 1, cancellationToken);
     return Results.Ok(new { text = result.Text, language = result.Language, durationSeconds = result.DurationSeconds, model = result.Model });
 });
-app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1706,10 +1707,12 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var hasSpeakerProfile = speakerProfiles.Count > 0;
     var speakerVerified = false;
     var speakerConfidence = 0.0;
+    var speakerTier = "none";
+    var speakerReason = "no_profile";
     if (hasSpeakerProfile)
     {
         var turnEmbedding = await EmbedSpeakerAudioAsync(request.Audio, "turn.wav", configuration, context.RequestServices, cancellationToken);
-        (speakerVerified, speakerConfidence) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, cancellationToken);
+        (speakerVerified, speakerConfidence, speakerTier, speakerReason) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, adaptationPolicy.Enabled, cancellationToken);
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
 
@@ -1766,9 +1769,9 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         ? runtimeState.Current
         : request.RuntimeMode;
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
-    return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence));
+    return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence, speakerTier, speakerReason));
 });
-app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
 {
     // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
     // chunks → TTS per-sentence → audio events as they arrive. The client plays
@@ -1808,7 +1811,9 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     if (hasSpeakerProfile)
     {
         var turnEmbedding = await EmbedSpeakerAudioAsync(request.Audio, "turn.wav", configuration, context.RequestServices, cancellationToken);
-        (speakerVerified, speakerConfidence) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, cancellationToken);
+        // The SSE model path carries no VoiceTurnResponse — tier/reason are computed
+        // inside (the adaptation toggle gates the enqueue) and discarded here.
+        (speakerVerified, speakerConfidence, _, _) = await VerifyTurnSpeakerAsync(request.Audio, turnEmbedding, speakerProfiles[0].Content, principal.UserId, configuration, context.RequestServices, adaptationChannel, adaptationPolicy.Enabled, cancellationToken);
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
     telemetry.Mark("speaker_done");
@@ -2036,6 +2041,87 @@ app.MapPost("/voice/speaker/verify", async (HttpContext context, IdentityService
     await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.verify", verified ? "ALLOW" : "DENY", verified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, verified ? "accepted" : "rejected", cancellationToken);
     return Results.Ok(new { verified, confidence = similarity, subject = principal.UserId.ToString("D"), provider = "campplus" });
 });
+// Voice identity recovery/diagnostics (docs/voice-identity.md §9, VI-5): adaptive
+// reset, global learning toggle, diagnostics and full profile deletion. No new auth
+// paths — AuthenticateRequestAsync + existing roles only. Audit reasons carry
+// counts/similarity/tiers, never transcripts, embeddings or text (§38).
+app.MapPost("/voice/identity/adaptive/reset", async (VoiceIdentityUserRequest? request, HttpContext context, IdentityService identity, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var targetUserId = request?.UserId ?? principal.UserId;
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (targetUserId != principal.UserId && !TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "voice.speaker.adaptive_reset", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    var profiles = await durableMemory.SearchBySourceAsync(targetUserId, "speaker.profile", cancellationToken);
+    if (profiles.Count == 0) return Results.NotFound(new { error = "no_profile" });
+    var profile = SpeakerProfile.TryParse(profiles[0].Content);
+    if (profile is null) return Results.NotFound(new { error = "no_profile" });
+    var adaptiveBefore = profile.Adaptive.Count;
+    var reset = profile.ResetAdaptive();
+    await durableMemory.DeleteAsync(targetUserId, profiles[0].Id, cancellationToken);
+    await durableMemory.AddAsync(targetUserId, MemoryScope.Private, reset.ToJson(), "speaker.profile", 1.0, cancellationToken);
+    await audit.WriteAsync(correlationId, "voice.speaker.adaptive_reset", "ALLOW", $"user:{targetUserId:D};adaptive_before:{adaptiveBefore};adaptive_after:0", cancellationToken);
+    return Results.Ok(new { reset = true, adaptiveBefore, adaptiveAfter = 0 });
+});
+app.MapPost("/voice/identity/adaptive/disable", async (HttpContext context, IdentityService identity, VoiceAdaptationPolicy adaptationPolicy, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.adaptive_toggle", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    adaptationPolicy.SetEnabled(false);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.adaptive_toggle", "ALLOW", "adaptive_disabled", cancellationToken);
+    return Results.Ok(new { enabled = false });
+});
+app.MapPost("/voice/identity/adaptive/enable", async (HttpContext context, IdentityService identity, VoiceAdaptationPolicy adaptationPolicy, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.adaptive_toggle", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    adaptationPolicy.SetEnabled(true);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.adaptive_toggle", "ALLOW", "adaptive_enabled", cancellationToken);
+    return Results.Ok(new { enabled = true });
+});
+app.MapGet("/voice/identity/diagnostics", async (Guid? userId, HttpContext context, IdentityService identity, DurableMemoryStore durableMemory, VoiceAdaptationPolicy adaptationPolicy, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var targetUserId = userId ?? principal.UserId;
+    if (targetUserId != principal.UserId && !TolikRoles.IsOwner(principal.Role))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    var profiles = await durableMemory.SearchBySourceAsync(targetUserId, "speaker.profile", cancellationToken);
+    if (profiles.Count == 0) return Results.NotFound(new { error = "no_profile" });
+    return Results.Ok(VoiceIdentityDiagnostics.Build(targetUserId, profiles[0].Content, adaptationPolicy.Enabled));
+});
+app.MapPost("/voice/identity/delete", async (VoiceIdentityUserRequest? request, HttpContext context, IdentityService identity, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var targetUserId = request?.UserId ?? principal.UserId;
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (targetUserId != principal.UserId && !TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "voice.speaker.profile_delete", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    var profiles = await durableMemory.SearchBySourceAsync(targetUserId, "speaker.profile", cancellationToken);
+    var deleted = 0;
+    foreach (var item in profiles)
+        if (await durableMemory.DeleteAsync(targetUserId, item.Id, cancellationToken)) deleted++;
+    await audit.WriteAsync(correlationId, "voice.speaker.profile_delete", "ALLOW", $"user:{targetUserId:D};deleted:{deleted}", cancellationToken);
+    return Results.Ok(new { deleted });
+});
 static async Task<List<double>?> EmbedSpeakerSampleAsync(Microsoft.AspNetCore.Http.IFormFile file, IConfiguration configuration, IServiceProvider services, CancellationToken cancellationToken)
 {
     if (file is null) return new List<double>();
@@ -2068,28 +2154,44 @@ static async Task<int> MeasureSpeechMsAsync(byte[] audio, string fileName, IConf
 }
 
 /// <summary>
-/// Speaker verification for a voice turn (docs/voice-identity.md VI-1/VI-2):
+/// Speaker verification for a voice turn (docs/voice-identity.md VI-1/VI-2/VI-5):
 /// v1/v2 profile aware — Similarity is the max over the canonical anchor and the
 /// adaptive blend, so the owner's natural voice states stay recognized. HIGH-tier
-/// turns additionally measure quality (VAD) and enqueue an adaptive candidate —
-/// async, the turn NEVER waits for learning. Returns the soft accept + confidence.
+/// turns additionally measure quality (VAD) and, when adaptation is enabled,
+/// enqueue an adaptive candidate — async, the turn NEVER waits for learning.
+/// Returns the soft accept + confidence + tier ("high"/"medium"/"low"/"none") +
+/// reason ("confirmed" | "below_threshold" | "quality_low" | "no_profile" |
+/// "service_disabled" | "not_evaluated" is the response default for paths that
+/// never evaluate the speaker).
 /// </summary>
-static async Task<(bool Verified, double Confidence)> VerifyTurnSpeakerAsync(
+static async Task<(bool Verified, double Confidence, string Tier, string Reason)> VerifyTurnSpeakerAsync(
     byte[] audio, List<double>? turnEmbedding, string? storedProfile, Guid userId,
     IConfiguration configuration, IServiceProvider services,
-    VoiceAdaptationChannel adaptation, CancellationToken cancellationToken)
+    VoiceAdaptationChannel adaptation, bool adaptationEnabled, CancellationToken cancellationToken)
 {
     var profile = SpeakerProfile.TryParse(storedProfile);
-    if (profile is null || turnEmbedding is null || turnEmbedding.Count == 0) return (false, 0.0);
+    if (profile is null) return (false, 0.0, "none", "no_profile");
+    if (turnEmbedding is null || turnEmbedding.Count == 0) return (false, 0.0, "none", "service_disabled");
     var confidence = profile.Similarity(turnEmbedding);
     var verified = SpeakerVerifier.Accept(confidence);
-    if (SpeakerProfile.Tier(confidence) == SpeakerConfidenceTier.High)
+    var tier = SpeakerProfile.Tier(confidence);
+    var tierName = tier switch
+    {
+        SpeakerConfidenceTier.High => "high",
+        SpeakerConfidenceTier.Medium => "medium",
+        _ => "low",
+    };
+    if (tier == SpeakerConfidenceTier.High)
     {
         var speechMs = await MeasureSpeechMsAsync(audio, "turn.wav", configuration, services, cancellationToken);
-        if (SpeakerProfile.IsAdaptiveCandidate(confidence, speechMs))
+        if (adaptationEnabled && SpeakerProfile.IsAdaptiveCandidate(confidence, speechMs))
+        {
             adaptation.TryEnqueue(new AdaptiveCandidate(userId, turnEmbedding, speechMs, confidence, DateTimeOffset.UtcNow));
+            return (verified, confidence, tierName, "confirmed");
+        }
+        return (verified, confidence, tierName, "quality_low");
     }
-    return (verified, confidence);
+    return (verified, confidence, tierName, "below_threshold");
 }
 static async Task<List<double>?> EmbedSpeakerAudioAsync(byte[] audio, string fileName, IConfiguration configuration, IServiceProvider services, CancellationToken cancellationToken)
 {
@@ -2423,6 +2525,7 @@ public sealed record UnlockRequest(string? UnlockCode);
 public sealed record ModelPreferenceRequest(string? Mode);
 public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
+public sealed record VoiceIdentityUserRequest(Guid? UserId);
 
 public sealed class AgentConnectionRegistry(
     TOLIK.Contracts.Transport.CoreTransportKeys? transportKeys = null)

@@ -62,6 +62,7 @@ public sealed class VoiceAdaptationService(
                         candidate,
                         scope.ServiceProvider.GetRequiredService<TOLIK.Infrastructure.Persistence.DurableMemoryStore>(),
                         scope.ServiceProvider.GetRequiredService<TOLIK.Infrastructure.Auditing.AuditWriter>(),
+                        scope.ServiceProvider.GetRequiredService<VoiceAdaptationPolicy>(),
                         stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -85,8 +86,16 @@ public sealed class VoiceAdaptationService(
         AdaptiveCandidate candidate,
         TOLIK.Infrastructure.Persistence.DurableMemoryStore durableMemory,
         TOLIK.Infrastructure.Auditing.AuditWriter audit,
+        VoiceAdaptationPolicy policy,
         CancellationToken cancellationToken)
     {
+        if (!policy.Enabled)
+        {
+            // Global learning toggle (VI-5): the turn path already refuses to enqueue,
+            // this is the second gate (defense in depth) — the candidate is dropped.
+            logger.LogInformation("Adaptive candidate for {UserId} dropped: adaptation disabled.", candidate.UserId);
+            return;
+        }
         var profiles = await durableMemory.SearchBySourceAsync(candidate.UserId, ProfileSource, cancellationToken);
         if (profiles.Count == 0)
         {
