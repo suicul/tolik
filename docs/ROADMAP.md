@@ -213,6 +213,39 @@ Real Autonomy/**Real-Time Voice (✓ СДЕЛАНО M0-M8)**/Multimodal/Genesis/
 Computer Use/Mind/Self-Development/Advanced (DREAM). Фазы RA-0..RA-4;
 pre-Genesis: RA-0/1/2; post-Genesis: RA-3/4.
 
+## Track 15 — Identity & Presence: Core Migration + Presence Manager + Embodiment (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+Full plan: **docs/identity-presence.md** (Master Spec директива 09.10.2026; остальное
+= tracks 8-14 ✓, НИЧЕГО не дублируется). Новое: **Одна Identity — ONE ACTIVE CORE**
+(техническое предотвращение split-brain: Core Lease/Epoch/Fencing — monotonic epoch,
+identity-anchored signed claims, НЕ lock-файл/PID/mutex; LocalEpoch < CurrentEpoch →
+STALE RUNTIME — старый комп после миграции НЕ продолжает работу); **Identity
+Cryptography** (Public/Signing/Encrypted Secrets/Recovery — миграция ДОКАЗЫВАЕТ
+право; секреты не копируются с конфигом); **Core Migration Protocol** (транзакционный:
+PREPARE→VERIFY→SNAPSHOT→SYNC→TRANSFER→INTEGRITY→BOOT→HEALTH→EPOCH→FENCE→SWITCH→
+FINALIZE; старый не финализирован до подтверждения нового; сохраняется ВСЁ: память/
+личность/Mind/skills/trust/achievements — никогда «новый сервер = новый Толик»);
+**CoreHost abstraction** (PC/VPS/Linux/Future, не привязан к провайдеру);
+**Presence Manager** (НОВОЕ: Core Migration ≠ Presence Migration — КРИТИЧНО; Presence:
+Device/Location/Mode/Attention/Activity/Capabilities; distributed organs — метафора;
+ONE TOLIK/НЕ клоны; Primary + Secondary Awareness; Presence Migration PC→Maria
+Laptop→return — «пошёл и вернулся»; PresenceState + renderer interpretation — НЕ
+Teleport.anim; departure/arrival интерпретации; policy приоритеты; PresenceLost — Core
+не погибает); **Multi-person perception** (distributed microphones = sensory nodes;
+речь с контекстом Speaker/Device/Location/Confidence/Emotion/Overlap — probabilistic;
+**Address Detection: hearing everything ≠ responding to everything** (речь TO TOLIK
+vs между людьми/TV/игра); **attention arbitration НЕ last-speaker-wins** («Секунду,
+Маша, я сначала закончу с Иваном»); multimodal scene model; **Attention ≠ Authority**:
+близость/громкость/визуальное — НИКТО не получает permission); **Cephalon embodiment**:
+КЛЮЧЕВОЙ принцип «TOLIK has state, animation is interpretation» (НЕ аним-клипы);
+Expression State СМЕШИВАЕТСЯ (Amusement 0.7+Anger 0.3+Thinking 0.5+Speaking 1.0 →
+саркастично-раздражённое БЕЗ clip); Expression Composer/DSL (sandbox → owner feedback →
+версионирование; learned expression library); primitives = алфавит; procedural idle
+(НЕ мёртвый loop); voice-as-body (FFT → bands → тело говорит с голосом); embodiment
+security (renderer НИКОГДА authority); Quest/desktop рендеры. Фазы IP-0..IP-8;
+pre-Genesis: IP-0..IP-2 (split-brain prevention НУЖЕН ДО VPS-миграции), IP-4/IP-6
+(детерминированные); post-Genesis: IP-5/IP-7/IP-8. Genesis остаётся deliberate
+milestone — техническая готовность сначала, ceremony потом.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
