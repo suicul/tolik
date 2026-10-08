@@ -150,6 +150,35 @@ governance/self-evolution/voice-identity:
 - **docs/genesis-upbringing.md** (PART II): Genesis = начало жизни и отношений, НЕ setup wizard; developmentally young (знания растут через взаимодействие, без вымышленной истории); фазы 0-8 (Awakening/First Contact/Self/Voice/Home/Family/Friends/Shared World/Independence — концептуальные, динамический диалог, НЕ hard-coded); активные вопросы из missing info + curiosity (информационная ценность, бесконечных допросов нет); bidirectional teaching; photo introduction (NEVER auto-confirm identity from face — гипотезы до подтверждения; ExternalMediaSource provider-абстракция: Yandex Disk/local/NAS); family tree (Person/Relationship/Direction/Confidence/Source/PreferredAddress); learning through correction; maturity как simulation (KnowledgeMaturity/SocialFamiliarity/SkillMaturity/AutonomyMaturity — НЕ «3 дня от роду»); learning rate высокий ранний → консервативный; **trust через свидетельства** (relationship trust ≠ security authorization); Genesis journal protected (birth/firsts) + first memory из реальной ceremony; переход guided→safe→normal autonomy (first independent activity — «я сам проверил голосовой контур»); Genesis НЕ сбрасывается легко.
 - Фазы CA-0..CA-7 + GU-0..GU-7; PRE-Genesis: CA-0/CA-1/CA-3/4-минимум/CA-6 + GU-0/GU-2/GU-3 (deterministic поверх существующих); ПОСЛЕ Genesis: CA-5/CA-7 + GU-4..GU-7. VI-3/VI-4 (voice/conversational enrollment) — уже реализованы ✓.
 
+## Track 13 — Multimodal Life: Real Family + Visual Memory + Live Camera (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+Full plan: **docs/multimodal-life.md** (директива 09.10.2026; PART I-III = готовые
+планы Track 12/11/12 ✓). Новое: **PersonProfile unified** (optional fields:
+Names/Nicknames/Relationships graph/VoiceProfile Track 8 + VisualProfile — ТОТ ЖЕ
+canonical+adaptive+anti-poisoning паттерн, НЕ новая система/InteractionHistory
+TOLIK↔person/LastSeen/LastHeard/KnownLocations); **мультимодальная идентичность**
+(voice+face+context+history → combined confidence С provenance; слабые сигналы ≠
+certainty; face Ivan + voice unknown → НЕ слепо предполагать — ask по security
+policy); **Recognition levels** UNKNOWN/POSSIBLE/LIKELY/HIGH/CONFIRMED поверх
+tiers; **Visual memory развивается** (первая встреча → углы/свет/выражения →
+robustнее; HIGH→adaptive, MEDIUM→no update, LOW→НИКОГДА); **Live camera
+companion** (смартфон = sensor client: camera→recognition→scene→emotion→Mind +
+mic→VAD→STT; «О, привет. Я тебя вижу» — не «Face detected: user_id»; камера
+как mic-always: permission+индикатор; face emotion → PossibleEmotion+Evidence
+НИКОГДА факт; юмор через personality, perception остаётся PossibleFrustration
+0.72; emotion НИКОГДА security); **Travel/мобильная непрерывность** (20ч absence:
+converse/observe/fonовые цели/consolidation/rest — NO fake continuous life;
+новые места → novelty→curiosity; поездка = эпизод если Ivan сохраняет);
+**Episodic memory + консолидация** (the firsts: Елена/Валентина/поездка/
+проект; raw → event → facts → relationships → episodes; сырые не вечно).
+**Семейные факты** (Елена Александровна/Валентина 14 лет — LEARNED, не
+hard-coded; корректируемы; младшие — консервативно: data/visual/proactive/
+autonomy). Genesis НЕ заканчивается с ceremony (Development → Normal Life;
+первая поездка через недели). Фазы MM-0..MM-6; pre-Genesis: MM-0..3
+(deterministic, face только с явным разрешением); post-Genesis: MM-4..6
+(live camera/поездки/реальные знакомства). Граница: Mind→Intent→Proposal→
+Autonomy→Authorization→Capability→Execution→Verification; НИКОГДА
+Emotion/Curiosity/Boredom/Relationship/Memory→Permission.
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
