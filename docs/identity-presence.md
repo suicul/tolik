@@ -175,7 +175,11 @@ spatial attention/свой LOD/performance профиль) — VR Track 7 инт
 IP-0 Identity cryptography формализация (Public/Signing/Secrets/Recovery)  [независимо;
      существующие Genesis identity/signed transport/NonceStore]
 IP-1 Core Lease + Epoch + Fencing (split-brain prevention, техническое)    [IP-0]
-IP-2 Core Migration protocol (транзакционный, snapshot/rollback паттерн)    [IP-1]
+IP-2 Core Migration protocol — DONE 09.10.2026 (scripts/migrate-core.ps1: 11
+    шагов, abort-on-fail, -WhatIfMode; docs/migration.md; скрипт не убивает
+    процессы и не пишет в DB — фенсинг через CoreLeaseService нового core, старый
+    STALE через renewal loop; CONFLICT → честный abort «останови старый core
+    первым»; SYNTAX OK; docker-верификация — выходные владельца)
 IP-3 CoreHost abstraction формализация (PC/VPS/Linux/Future)                 [IP-2]
 IP-4 Presence Manager (registry + policy + PresenceLost)                     [независимо]
 IP-5 Presence Migration (State + renderer interpretation)                    [IP-4;

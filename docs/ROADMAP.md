@@ -242,9 +242,13 @@ Expression State СМЕШИВАЕТСЯ (Amusement 0.7+Anger 0.3+Thinking 0.5+Sp
 версионирование; learned expression library); primitives = алфавит; procedural idle
 (НЕ мёртвый loop); voice-as-body (FFT → bands → тело говорит с голосом); embodiment
 security (renderer НИКОГДА authority); Quest/desktop рендеры. Фазы IP-0..IP-8;
-pre-Genesis: IP-0..IP-2 (split-brain prevention НУЖЕН ДО VPS-миграции), IP-4/IP-6
-(детерминированные); post-Genesis: IP-5/IP-7/IP-8. Genesis остаётся deliberate
-milestone — техническая готовность сначала, ceremony потом.
+**IP-0..IP-2 DONE 09.10.2026** (cryptography формализация + CoreLease/Epoch/Fencing
+реализовано commit a0e692a +9 тестов 419 green + миграционный протокол
+scripts/migrate-core.ps1 + docs/migration.md — abort-on-fail, -WhatIfMode,
+скрипт не убивает процессы/не пишет DB; docker-верификация — выходные владельца);
+pre-Genesis остаток: IP-4/IP-6 (детерминированные); post-Genesis: IP-5/IP-7/IP-8.
+Genesis остаётся deliberate milestone — техническая готовность сначала, ceremony
+потом.
 
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
