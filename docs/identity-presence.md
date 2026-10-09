@@ -189,8 +189,13 @@ IP-4 Presence Manager — DONE 09.10.2026 (commit cbdcde2, +7 тестов: Pres
     unavailable; routing-only — НИКОГДА authorization (Attention ≠ Authority))
 IP-5 Presence Migration (State + renderer interpretation)                    [IP-4;
      Track 7 VR / Track 3 desktop рендеры]
-IP-6 Distributed microphones + address detection + attention                 [независимо;
-     arbitration + multimodal scene model                                     VI-4/M8]
+IP-6 Distributed microphones + address detection + attention                 DONE 09.10.2026
+     arbitration + multimodal scene model                                     (commit 1c7e1b1,
+     SpeechEvent (probabilistic, context only — no transcripts/audio/auth),
+     VoiceAddressDetector: HEARING ≠ RESPONDING (wake word — primary signal,
+     voice-turn audio addressed by construction, ambient — нет),
+     AttentionArbiter: НЕ last-speaker-wins (explicit address > confidence >
+     continuity; routing only, НИКОГДА authorization); +12 тестов)
 IP-7 Expression State + Composer + procedural idle + voice-as-body           [независимо;
      (web canvas → Track 3/VR рендеры)                                        Track 3 blocked]
 IP-8 Learned expression library (owner feedback → версионирование)           [IP-7;
