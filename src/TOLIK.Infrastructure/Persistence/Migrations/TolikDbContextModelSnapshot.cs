@@ -98,6 +98,39 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("audit_events", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.CoreLeaseEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedNever()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ActiveHost")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTimeOffset>("AcquiredAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Epoch")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("LeaseExpiration")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("RuntimeInstanceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("tolik_core_leases", (string)null);
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.SystemRecord", b =>
                 {
                     b.Property<string>("Key")

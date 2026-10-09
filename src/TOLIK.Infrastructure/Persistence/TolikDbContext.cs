@@ -17,6 +17,7 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
     public DbSet<TolikProactiveEntity> Proactive => Set<TolikProactiveEntity>();
 
     public DbSet<TolikGenesisIdentity> GenesisIdentity => Set<TolikGenesisIdentity>();
+    public DbSet<CoreLeaseEntity> CoreLeases => Set<CoreLeaseEntity>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -134,5 +135,18 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
         // Rerun impossibility (docs/genesis.md): the singleton sentinel column admits
         // exactly one row — a second ceremony insert violates the unique constraint.
         genesis.HasIndex(x => x.LifecycleState).IsUnique();
+
+        var coreLease = modelBuilder.Entity<CoreLeaseEntity>();
+        coreLease.ToTable("tolik_core_leases");
+        coreLease.HasKey(x => x.Id);
+        coreLease.Property(x => x.Id).ValueGeneratedNever();
+        coreLease.Property(x => x.ActiveHost).HasMaxLength(128).IsRequired();
+        coreLease.Property(x => x.State).HasMaxLength(32).IsRequired();
+        // Split-brain prevention (docs/identity-presence.md §1/IP-1): the lease table is
+        // single-row — the singleton sentinel primary key (Id = 1, never database
+        // generated) admits exactly one row; a second concurrent insert violates the PK,
+        // mirroring the GenesisIdentity at-most-one pattern. The table is identity-
+        // protected machinery, part of the protected core (self-evolution §4 protected
+        // areas): never writable by tool/self-evolution paths.
     }
 }

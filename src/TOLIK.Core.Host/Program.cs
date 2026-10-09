@@ -31,6 +31,18 @@ builder.Services.Configure<Microsoft.AspNetCore.Builder.WebSocketOptions>(option
 });
 builder.Services.AddTolikCoreInfrastructure();
 builder.Services.AddTolikPostgres(builder.Configuration);
+// Core lease (docs/identity-presence.md IP-1): ONE ACTIVE CORE per identity — the
+// single-row lease table + advisory-locked acquisition technically prevents split-brain.
+// AuditWriter is a scoped registration but stateless (factory-only, creates its own
+// DbContext per write): the lease manager is a singleton owning a dedicated instance
+// over the same singleton DbContextFactory — no captive scope (safe under validation).
+builder.Services.AddSingleton<CoreLeaseManager>(sp =>
+{
+    var factory = sp.GetRequiredService<IDbContextFactory<TolikDbContext>>();
+    return new CoreLeaseManager(factory);
+});
+builder.Services.AddSingleton<CoreLeaseState>();
+builder.Services.AddHostedService<CoreLeaseService>();
 builder.Services.AddSingleton<ModelRouter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore>();
 builder.Services.AddSingleton<OpenAiCompatibleRequestBuilder>();
@@ -152,7 +164,7 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState) =>
+app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, CoreLeaseState leaseState, TOLIK.Infrastructure.Identity.CoreLeaseManager leases) =>
 {
     // Voice endpoint is configuration (§55: no baked-in hostnames for VPS moves).
     var voiceBase = configuration["TOLIK_VOICE:COSYVOICE_ENDPOINT"] ?? "http://voice:9660";
@@ -195,6 +207,19 @@ app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context,
 
     bool coreHealthy = runtime.IsAuthorizationAuthority;
 
+    // Core lease (docs/identity-presence.md IP-1): the single-ACTIVE-CORE claim —
+    // staleness (fenced/expired/no lease) is fail-closed and observable here. The
+    // lease lookup is read-only and never breaks the health response.
+    long? leaseEpoch = null;
+    string? leaseHost = null;
+    try
+    {
+        var lease = await leases.TryGetCurrentLeaseAsync();
+        leaseEpoch = lease?.Epoch;
+        leaseHost = lease?.ActiveHost;
+    }
+    catch { }
+
     return Results.Ok(new
     {
         core = coreHealthy,
@@ -204,7 +229,8 @@ app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context,
         component = runtime.ComponentName,
         authority = runtime.IsAuthorizationAuthority ? "Core" : "None",
         execution = runtime.ExecutesOperatingSystemCommands ? "Local" : "DelegatedToAgent",
-        locked = securityState.IsLocked
+        locked = securityState.IsLocked,
+        coreLease = new { stale = leaseState.IsStale, reason = leaseState.Reason, epoch = leaseEpoch, host = leaseHost }
     });
 });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
@@ -310,6 +336,14 @@ static string ResolveAppAlias(string name) => name.Trim().ToLowerInvariant() swi
 static IResult? GuardIntentCapability(SessionPrincipal? principal, AgentCapability capability, string resource, IServiceProvider services)
 {
     var securityState = services.GetRequiredService<CoreSecurityState>();
+    var leaseState = services.GetRequiredService<CoreLeaseState>();
+    // Core-lease fencing (docs/identity-presence.md IP-1): a stale runtime (fenced by a
+    // newer runtime, expired lease, or no lease) is refused at the intent paths —
+    // technical split-brain prevention, additive inside this helper (the
+    // AuthorizationPolicy itself is unchanged; a DispatchGuardedAsync wiring is a
+    // documented follow-up).
+    if (leaseState.IsStale)
+        return Results.Problem("intent action denied: this runtime lost the core lease (stale)", statusCode: StatusCodes.Status403Forbidden);
     var router = services.GetRequiredService<ModelRouter>();
     var request = new AuthorizationRequest(
         principal,
