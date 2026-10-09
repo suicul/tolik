@@ -251,6 +251,21 @@ IP-5 Presence Migration с рендерами, IP-7/IP-8 Expression Composer/lib
 Genesis остаётся deliberate milestone — техническая готовность (split-brain
 prevention) СДЕЛАНА, ceremony — с владельцем.
 
+## Track 16 — Android client (Kotlin, thin) 🔲 фиксация 09.10.2026, реализация после Genesis (детальный промт — позже по запросу владельца)
+Стек: Kotlin (AGENTS §36), thin-клиент — НЕ Core logic; существующая заготовка
+`clients/TOLIK.Android/` (минимальные модели, HTTP client). Фазы:
+- AN-0 recon: заготовка, Kotlin окружение; signed transport (агент-паттерн фреймов)
+- AN-1 chat + voice: chat (существующие контракты), voice input (mic → VAD M6 → STT → /voice/turn-stream M4), TTS playback (SSE audio chunks), barge-in (M5 /voice/cancel + ESC-аналог)
+- AN-2 notifications/confirmations: уведомления, confirmations approve (существующий bound-механизм), task monitoring (RealtimeEventHub)
+- AN-3 live camera: MM-4 (Track 13) — sensor client: camera→recognition→scene→emotion→Mind; permission+индикатор; post-Genesis
+- AN-4 presence: Presence Manager интеграция (Track 15) — mobile sensory organ; Presence Migration «пошёл и вернулся»; post-Genesis
+Роли в других треках: 13 (MM-4/поездки 20ч), 15 (органы/capability model:
+Camera/Mic/GPS-if-authorized/Notifications), 14 (smartphone embodiment),
+7 (Xiaomi/Wearables Toolkit — расширение Android-клиента). Порядок: AN-0..2
+pre-Genesis допустимо (thin, поверх контрактов); AN-3/4 — post-Genesis. Quest/
+Android НЕ получают Windows privileges (governance). Speaker verification —
+как на других клиентах: probabilistic hint, НИКОГДА authorization (§13).
+
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
 - review.tsv curation (owner's ears).
