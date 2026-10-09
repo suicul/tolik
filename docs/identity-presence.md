@@ -181,7 +181,12 @@ IP-2 Core Migration protocol — DONE 09.10.2026 (scripts/migrate-core.ps1: 11
     STALE через renewal loop; CONFLICT → честный abort «останови старый core
     первым»; SYNTAX OK; docker-верификация — выходные владельца)
 IP-3 CoreHost abstraction формализация (PC/VPS/Linux/Future)                 [IP-2]
-IP-4 Presence Manager (registry + policy + PresenceLost)                     [независимо]
+IP-4 Presence Manager — DONE 09.10.2026 (commit cbdcde2, +7 тестов: PresenceNode
+    + PresenceManager в Contracts — ONE TOLIK/несколько органов; PresenceLost
+    (90s timeout → unavailable, узел остаётся в списке); Remove — только орган,
+    Core продолжается; Select policy: активная беседа > собеседник > задача >
+    owner > family > Quest (spatial) > home > первый доступный; ignores
+    unavailable; routing-only — НИКОГДА authorization (Attention ≠ Authority))
 IP-5 Presence Migration (State + renderer interpretation)                    [IP-4;
      Track 7 VR / Track 3 desktop рендеры]
 IP-6 Distributed microphones + address detection + attention                 [независимо;
