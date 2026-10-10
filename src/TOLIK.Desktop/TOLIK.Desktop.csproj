@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms is part of the WindowsDesktop shared framework (not a NuGet dependency):
+         used ONLY for the tray icon (NotifyIcon). WPF has no built-in tray support. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <IsPackable>false</IsPackable>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RootNamespace>TOLIK.Desktop</RootNamespace>
+    <AssemblyName>TOLIK.Desktop</AssemblyName>
+    <!-- The app.manifest carries PerMonitorV2 for WPF; the WinForms-only
+         analyzer suggestion (ApplicationHighDpiMode) does not apply here. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+</Project>
