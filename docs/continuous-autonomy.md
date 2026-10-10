@@ -176,14 +176,25 @@ autonomous scheduling. Большую часть времени система �
 ## 8. Фазы + зависимости + PRE/POST-Genesis
 
 ```text
-CA-0 LongRunningTask (lifecycle расширение + Scope + Ownership)   [независимо]
-CA-1 TaskAuthorizationLease (duration/environments/forbidden)     [CA-0,
-     существующий lease store]
+CA-0 LongRunningTask (lifecycle расширение + Scope + Ownership) — DONE 10.10.2026
+    (commit d255e04: TaskScope (explicit bounded, forbidden ops/stop conditions) +
+    TaskLifecycle.LongRunningState/LongRunningLog attachment; enum/tries не тронуты)
+CA-1 TaskAuthorizationLease (duration/environments/forbidden) — DONE 10.10.2026
+    (commit d255e04: TaskLeaseStore — fail-closed Validate (no_lease/revoked/
+    expired/forbidden/outside_scope), Revoke «прекращай» — следующий dispatch
+    отклонён, состояние сохранено; DispatchGuardedAsync: аддитивная валидация
+    scope-lease; существующий AuthorizationLeaseStore остаётся dispatch-time
+    enforcement)
+CA-4 Task journal + real progress — DONE 10.10.2026 (commit d255e04:
+    TaskJournalEntry + TaskJournal.Render (хронологический) +
+    TaskProgressSnapshot (evidence-derived, 100 только из Completed — никогда
+    не выдумывается) + /tasks/{id}/journal POST+GET)
 CA-2 TaskSupervisor + heartbeat/liveness + stall detection        [CA-0, CA-1;
      watchdog расширение]
 CA-3 Checkpoints + resume-after-restart + TaskSteps persistence   [CA-0;
      E2 план]
-CA-4 Task journal + real progress tracking                        [CA-0]
+CA-4 Task journal + real progress tracking — DONE 10.10.2026       [CA-0]
+     (commit d255e04)
 CA-5 Absence/return semantics + UserDisconnected ≠ TaskCancelled  [CA-4;
      RealtimeEventHub расширение]
 CA-6 WAITING/RECOVERING состояния + parallel + bounded recovery    [CA-2]
