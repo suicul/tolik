@@ -100,7 +100,7 @@ Two companion plans from owner directives, grounded in a full code audit (exp-9)
 - **docs/computer-use.md**: CU-1..CU-10 (после Genesis): Computer Use Foundation, UI Observation (a11y/OCR/vision), UI World Model, Closed-loop, Sensitive UI + prompt injection, Browser Automation, Skill Learning (semantic), Exploration Mode, Demonstration Learning, Long-running, Cephalon. **+ §15 Game Automation & Interactive Application Layer (CU-GA, директива 09.10.2026):** игры как специализация Computer Use (среда БЕЗ a11y-гарантий: DirectX/анимации/cooldowns), Game World Model (семантические таргеты первичны, координаты = execution detail), closed-loop с верификацией перехода состояния (клик никогда не считается успешным), GAME_LEARNING_MODE (семантические workflow, НЕ координаты; demonstration → валидация автономным воспроизведением → только verified → trusted), goal-oriented tasks («фарми до 100М» — цели, не макросы), WaitUntil-условия вместо sleep, dynamic UI adaptation (re-identify при апдейтах), safety НЕ ослабляется «потому что игра» (анти-cheat bypassing/DRM ЗАПРЕЩЕНЫ — AGENTS.md §25), иерархическое наблюдение (дорогая модель только при значимом изменении сцены), skill confidence states (LOW_CONFIDENCE → нет risky autonomous). ДО Genesis: контракты без фейка; ПОСЛЕ: провайдеры/GAME_LEARNING_MODE/goal runner/skills.
 - **Реализовано (PRE-GENESIS scope, 410/410 green):** Phase A (CapabilityRegistry + gap-fix, commit a352f68) + Phase B (AutonomyPolicy, commit affc51b) + E-минимум (pause/resume, commit affc51b) — +22 теста. Остальное (C broker, D2, E2, F, G, CU-*) — ПОСЛЕ Genesis по планам.
 
-## Track 10 — Self-Evolution: Self-Development + Self-Optimization (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+## Track 10 — Self-Evolution: Self-Development + Self-Optimization (approved 09.10.2026) ✅ pre-Genesis done 10.10.2026 (SE-0/1/4), post-Genesis queued
 Full plan: **docs/self-evolution.md** (директива 09.10.2026). Три РАЗДЕЛЬНЫЕ
 подсистемы (§26): Self-Maintenance (governance §4) / Self-Optimization (эксперимент-
 цикл: Measure→Bottleneck→Hypothesis→Branch→Benchmark→Regression→Security→Baseline
@@ -117,6 +117,14 @@ SE-4 protected расширение; ПОСЛЕ: SE-2/3 лаборатория/�
 само-развитие/цикл, SE-7. Skill model/lifecycle (полные состояния
 DISCOVERED..ROLLED_BACK, PostgreSQL, semantic-НЕ-координаты, Memory≠Skill≠Task≠
 Authorization, application-specific policy) — docs/computer-use.md §16.
+**Реализовано (pre-Genesis, 509/509 green):** SE-0/1/4 (commit ccfd2b0:
+MetricCatalog — 20 фиксированных метрик, MetricRecorder bounded rings +
+percentiles; BaselineRecord/BaselineComparer — per-metric reject gate (tolerance
+±10%, missing metric FAIL CLOSED) + BaselineStore (Postgres) + EF-миграция
+AddBaselines (аддитивно — применится на следующем рестарте core); ToolEscalation
+security-critical-source + 11 новых security-компонентов (T13, единый реестр)).
+Остаток (post-Genesis): SE-2/3 (лаборатория/бюджеты), SE-5/6 (само-развитие/
+цикл), SE-7.
 
 ## Track 11 — Mind / Internal Life (approved 09.10.2026) ✅ pre-Genesis core DONE 10.10.2026 (MI-0..2), post-Genesis queued
 Full plan: **docs/mind.md** (директива 09.10.2026). Два цикла: реактивная

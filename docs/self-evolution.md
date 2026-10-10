@@ -191,11 +191,29 @@ HIGH; только перф/кэш → LOW; иначе MEDIUM) — не LLM'ом
 
 ```text
 SE-0 Метрики (voice ✓ база + ComputerUse/core/model/system)   [независимо]
+     — DONE 10.10.2026 (commit ccfd2b0: MetricCatalog — фиксированные
+     определения 20 метрик по подсистемам (voice M7-расширение/core/model/
+     system), неизвестные fail closed; MetricRecorder — bounded rings 256,
+     MetricSummary percentiles min/p50/p95/max; Computer Use — CU-GA
+     post-Genesis)
 SE-1 Baseline store + benchmark infra + CI gates              [SE-0]
+     — store/comparison/gate DONE 10.10.2026 (commit ccfd2b0: BaselineRecord
+     (version/benchmark/env/metrics/test results); BaselineComparer —
+     per-metric сравнение, lower-is-better vs higher-is-better, tolerance
+     ±10% + MetricThreshold, missing metric FAIL CLOSED; BaselineStore
+     (Postgres, LearnedRuleStore паттерн) + EF-миграция AddBaselines
+     (аддитивно, применится на следующем рестарте core); benchmark
+     infra + CI gates — с SE-2)
 SE-2 Experiment Lab (sandbox + runner + experiment memory)    [SE-1]
 SE-3 Optimization budget (TOLIK_OPT_* + game/idle окна)       [SE-0]
 SE-4 Protected self-modification (escalation extension +
      owner release path)                                      [независимо]
+     — escalation extension DONE 10.10.2026 (commit ccfd2b0: security-
+     critical-source правило расширено 11 новыми security-компонентами —
+     CapabilityRegistry/AutonomyPolicy/AutonomyLevelPolicy/ConsentModel/
+     CoreLease/SignedTransport/GenesisService/GenesisVoiceEnrollment/
+     TrustedPersonEnrollment/VoiceAdaptationService/VoiceIdentityDiagnostics
+     — единый реестр, Critical+confirm, T13; owner release path — с SE-5)
 SE-5 Self-Development pipeline (через существующие dev agents) [SE-2, SE-4]
 SE-6 Continuous loop (engine: classify/prioritize/experiment)  [SE-2, SE-5]
 SE-7 Cephalon + personality integration                       [SE-6]
