@@ -266,7 +266,7 @@ IP-5 Presence Migration с рендерами, IP-7/IP-8 Expression Composer/lib
 Genesis остаётся deliberate milestone — техническая готовность (split-brain
 prevention) СДЕЛАНА, ceremony — с владельцем.
 
-## Track 16 — Android client (Kotlin, thin) 🔲 фиксация 09.10.2026, реализация после Genesis (детальный промт — позже по запросу владельца)
+## Track 16 — Android client (Kotlin, thin) 🔨 реализация В ПРОЦЕССЕ (AN-0..2, директива владельца 10.10.2026 — церемония отложена)
 Стек: Kotlin (AGENTS §36), thin-клиент — НЕ Core logic; существующая заготовка
 `clients/TOLIK.Android/` (минимальные модели, HTTP client). Фазы:
 - AN-0 recon: заготовка, Kotlin окружение; signed transport (агент-паттерн фреймов)
@@ -280,6 +280,30 @@ Camera/Mic/GPS-if-authorized/Notifications), 14 (smartphone embodiment),
 pre-Genesis допустимо (thin, поверх контрактов); AN-3/4 — post-Genesis. Quest/
 Android НЕ получают Windows privileges (governance). Speaker verification —
 как на других клиентах: probabilistic hint, НИКОГДА authorization (§13).
+**Статус (10.10.2026):** реализация AN-0..2 в процессе (директива владельца —
+церемония отложена): Gradle-проект (Kotlin, classic Views/Material 3, minSdk 26,
+OkHttp+Gson+coroutines, без DI-фреймворков), transport impl (401/403 → failure,
+никогда локальная авторизация), chat screen, voice (mic → VAD → /voice/turn,
+TTS playback, barge-in), task monitoring (RealtimeEventHub WS) + notifications +
+confirmations. Android SDK на машине НЕТ (ANDROID_HOME пуст, adb/gradle
+отсутствуют) → код compile-pending: валидация при установке SDK. Токен агента —
+через TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
+
+## Pre-Genesis audit (oracle, 10.10.2026) — PASS, M1-M4 закрыты
+Верdict: все 9 security-инвариантов держат (trust ≠ authorization; никогда
+self-escalating; consent bounded/revocable/target-bound; fail-closed; без
+параллельных систем; LLM не авторизует; bounded/thread-safe; secret hygiene;
+CaptureScreen posture). **M1-M4 закрыты** (commit e8669c5: Configured fail-
+closed → Reactive при невалидном TOLIK_AUTONOMY_LEVEL; ConsentGrant identity-
+bound (GrantedBy required, FindActive advisory-only, бытовая изоляция грантов);
+bounded/enforceable consent (sweep expired, Consume для OneTime, SessionScoped
+требует session id + RevokeSession, cap 256); BaselineComparer fail-closed на
+non-finite (NaN/Infinity отвергаются, не принимаются молча) + Minors m1-m5/n2/n4
+закрыты). **m6-хардненинг** (commit 60e65de): токен агента через
+TOLIK_SESSION_TOKEN env вместо командной строки (Win32_Process-читаемость,
+T3/T8; live-агент перезапущен через env — в cmdline токена нет). **Бэклог
+(не блокирует):** n1 — Baselines snake_case + index миграция; n5 — retention
+policy для capture post-Genesis. 527/527 тестов, live-стек зелёный.
 
 ## Standing pending items (no owner needed to start)
 - Cloud API keys → enable Reasoning/Coding/Vision cloud routes + ask-policy.
