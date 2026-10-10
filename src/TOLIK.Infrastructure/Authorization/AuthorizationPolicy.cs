@@ -40,7 +40,7 @@ public static class ToolEscalation
         new EscalationRule(
             "security-critical-source",
             AgentCapability.WriteFile,
-            new Regex(@"(ProtocolContracts\.cs|CoreRuntime\.cs|AgentRuntime\.cs|AuthorizationEngine\.cs|AuthorizationPolicy\.cs|ToolEscalation\.cs|TolikRoles\.cs|SecurityLogging\.cs|AuditWriter\.cs|DeviceChallengeVerifier\.cs)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            new Regex(@"(ProtocolContracts\.cs|CoreRuntime\.cs|AgentRuntime\.cs|AuthorizationEngine\.cs|AuthorizationPolicy\.cs|ToolEscalation\.cs|TolikRoles\.cs|SecurityLogging\.cs|AuditWriter\.cs|DeviceChallengeVerifier\.cs|CapabilityRegistry\.cs|AutonomyPolicy\.cs|AutonomyLevelPolicy\.cs|ConsentModel\.cs|CoreLease\.cs|SignedTransport\.cs|GenesisService\.cs|GenesisVoiceEnrollment\.cs|TrustedPersonEnrollment\.cs|VoiceAdaptationService\.cs|VoiceIdentityDiagnostics\.cs)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
             ToolRiskLevel.Critical,
             RequireConfirmation: true,
             Reason: "modifying TOLIK's own security-critical source can bypass authorization (T13)"),

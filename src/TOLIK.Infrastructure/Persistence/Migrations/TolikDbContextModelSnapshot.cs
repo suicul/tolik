@@ -98,19 +98,54 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("audit_events", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.BaselineEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("BenchmarkId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("HardwareEnv")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("MetricsJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SoftwareEnv")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TestResultsSummary")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Baselines");
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.CoreLeaseEntity", b =>
                 {
                     b.Property<long>("Id")
-                        .ValueGeneratedNever()
                         .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("AcquiredAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("ActiveHost")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
-
-                    b.Property<DateTimeOffset>("AcquiredAt")
-                        .HasColumnType("timestamp with time zone");
 
                     b.Property<long>("Epoch")
                         .HasColumnType("bigint");

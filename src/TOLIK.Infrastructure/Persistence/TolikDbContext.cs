@@ -19,6 +19,8 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
     public DbSet<TolikGenesisIdentity> GenesisIdentity => Set<TolikGenesisIdentity>();
     public DbSet<CoreLeaseEntity> CoreLeases => Set<CoreLeaseEntity>();
 
+    public DbSet<BaselineEntity> Baselines => Set<BaselineEntity>();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         EnsureAuditAppendOnly();
