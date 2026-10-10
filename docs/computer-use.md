@@ -189,7 +189,19 @@ Waiting/Success/Confused/Error) — Track 3 Desktop / web UI. Безопасно
 
 ```text
 CU-1 Foundation (capture + Desktop Awareness)     [governance A]
+     — model/descriptor DONE 10.10.2026 (commit 129ead5: AgentCapability.
+     CaptureScreen (аддитивно, без перенумерации) + дескриптор (Perception,
+     LowRisk — не-интерактивные capture → Notify, никогда молча, §50;
+     AllowsBackground/не Reversible/AuditAlways); PcState/PcWindowState/
+     PcApplicationState + PcStateBuilder — детерминированная агрегация
+     (приложения группируются, focused ВЫВОДИТСЯ — не угадывается,
+     notifications per-app); live wiring (capture loop) — post-Genesis CU-3+)
 CU-2 UI Observation (a11y/OCR/vision)             [CU-1]
+     — contract DONE 10.10.2026 (commit 129ead5: IUiObserver — UiElement
+     {text, role, automation_id, bounds, state} — семантические цели ПЕРВИЧНЫ,
+     координаты — detail; UiRepresentation validity; provider-replaceable
+     (local OCR/UIA дёшево, cloud qwen2.5vl для сложного, НЕ привязывать);
+     провайдеры — с CU-3+, действия post-Genesis)
 CU-3 Closed-loop + Verification                   [governance B, CU-2]
 CU-4 Browser Automation                           [CU-3]
 CU-5 Skill Learning (store + exploration)         [governance A/B, CU-2]
@@ -207,7 +219,8 @@ vision (qwen2.5vl в стеке) → cloud reasoning. Полный screenshot в
 complex reasoning → GPT. Model-agnostic (Core), провайдеры заменяемы.
 
 Решения ДО Genesis: CU-1 capture capability + desktop awareness (read-only);
-CU-2 a11y/OCR (локальные, дёшево). ПОСЛЕ Genesis: CU-3+ (действия через
+CU-2 a11y/OCR (локальные, дёшево) — модели/дескриптор/контракты ГОТОВЫ
+10.10.2026 (commit 129ead5, 518/518 green). ПОСЛЕ Genesis: CU-3+ (действия через
 autonomy policy), CU-5+ (skills), CU-9 (autonomous chains).
 
 Acceptance (треб. #44): сценарии 1-6 директивы покрываются: 1 (LaunchApplication
