@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows;
+using TOLIK.Desktop.Bridge;
 using TOLIK.Desktop.Presence;
 using WinForms = System.Windows.Forms;
 
@@ -11,10 +12,12 @@ using Point = System.Drawing.Point;
 namespace TOLIK.Desktop;
 
 /// <summary>
-/// Composition root for the Phase 1 desktop presence: overlay window + tray icon +
-/// mode policy + global hotkey. Deliberately small: TOLIK is a background system
-/// (AGENTS §34), and this app contains NO identity, memory, permissions or network
-/// code — it is a local, honest visual presence with no Core connection yet.
+/// Composition root for the desktop presence: overlay window + tray icon + mode
+/// policy + global hotkey + the Core expression link (CE-2). Deliberately thin:
+/// TOLIK is a background system (AGENTS §34) — the app contains NO identity,
+/// memory, permissions or authorization logic. The link is a READ-ONLY consumer
+/// of Core's expression stream: token from the dev endpoint, in-memory only,
+/// never persisted (SECURITY §6); the renderer renders, it never decides.
 /// </summary>
 public partial class App : Application
 {
@@ -25,6 +28,10 @@ public partial class App : Application
     private CephalonWindow? _window;
     private WinForms.NotifyIcon? _tray;
     private Icon? _trayIcon;
+
+    private CoreExpressionClient? _coreLink;
+    private LocalTokenSource? _linkTokens;
+    private CancellationTokenSource? _linkCts;
 
     private WinForms.ToolStripMenuItem? _showItem;
     private WinForms.ToolStripMenuItem? _interactiveItem;
@@ -54,10 +61,19 @@ public partial class App : Application
 
         SetMode(PresenceMode.Normal);
         SetInteractive(false);
+
+        StartCoreLink();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _linkCts?.Cancel();
+        _coreLink = null;
+        _linkTokens?.Dispose();
+        _linkTokens = null;
+        _linkCts?.Dispose();
+        _linkCts = null;
+
         if (_tray is not null)
         {
             _tray.Visible = false;
@@ -68,6 +84,49 @@ public partial class App : Application
         _window?.Close();
         _singleInstance?.Dispose();
         base.OnExit(e);
+    }
+
+    // ---------- Core expression link (CE-2, read-only consumer) ----------
+
+    /// <summary>
+    /// Starts the Core link: dev-token source (memory only) → authenticated WS →
+    /// cephalon_expression frames. Frames and state snapshots are raised on a worker
+    /// thread and marshaled onto the dispatcher; failures surface as honest link
+    /// states — the overlay never crashes and never lies about being connected.
+    /// </summary>
+    private void StartCoreLink()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        CoreLinkOptions options = CoreLinkOptions.FromEnvironment();
+        var tokens = new LocalTokenSource(options);
+        var client = new CoreExpressionClient(options, tokens, () => new ClientWebSocketSocket());
+        var cts = new CancellationTokenSource();
+
+        _coreLink = client;
+        _linkTokens = tokens;
+        _linkCts = cts;
+
+        _window.CephalonHost.CoreLink.EndpointLabel = options.BaseUri.Authority;
+
+        client.FrameReceived += frame =>
+            _window?.Dispatcher.BeginInvoke(() => _window.CephalonHost.OnCoreExpressionFrame(frame));
+        client.StateChanged += snapshot =>
+            _window?.Dispatcher.BeginInvoke(() => OnCoreLinkStateChanged(snapshot));
+
+        _ = System.Threading.Tasks.Task.Run(() => client.RunAsync(cts.Token));
+    }
+
+    private void OnCoreLinkStateChanged(LinkSnapshot snapshot)
+    {
+        if (_window is not null)
+        {
+            _window.CephalonHost.OnCoreLinkState(snapshot);
+        }
+        UpdateTrayText();
     }
 
     // ---------- tray ----------
@@ -115,7 +174,7 @@ public partial class App : Application
         var tray = new WinForms.NotifyIcon
         {
             Icon = _trayIcon,
-            Text = "TOLIK — local presence, no Core connection",
+            Text = "TOLIK — starting…",
             Visible = true,
             ContextMenuStrip = menu,
         };
@@ -172,10 +231,27 @@ public partial class App : Application
             item.Value.Checked = item.Key == mode;
         }
 
-        if (_tray is not null)
+        UpdateTrayText();
+    }
+
+    /// <summary>Tray tooltip = presence mode + the honest Core link state (≤63 chars,
+    /// the NotifyIcon limit). Never claims a connection that is not there.</summary>
+    private void UpdateTrayText()
+    {
+        if (_tray is null)
         {
-            _tray.Text = $"TOLIK — {mode} (local, no Core connection)";
+            return;
         }
+
+        string link = (_window?.CephalonHost.CoreLink) switch
+        {
+            { State: CoreLinkState.Connected, LastMode: { } coreMode } => $"Core: {coreMode}",
+            { State: CoreLinkState.Connected } => "Core: connected",
+            { State: CoreLinkState.Connecting } => "Core: connecting…",
+            { State: CoreLinkState.AuthRejected } => "AUTH REJECTED",
+            _ => "no Core connection",
+        };
+        _tray.Text = $"TOLIK — {_mode} · {link}";
     }
 
     private void SetInteractive(bool interactive)

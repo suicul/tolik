@@ -2,21 +2,21 @@ namespace TOLIK.Desktop.Motion;
 
 /// <summary>
 /// Color tone of the Cephalon. Blue is the primary family; red is strictly reserved
-/// for real alarm/authorization states (Phase 2/3). Voice green is the reference
-/// accent for active speech. Tone is mapped from state, never invented.
+/// for real alarm/authorization states. Voice green is the reference accent for
+/// active speech. Tone is mapped from state, never invented.
 /// </summary>
 public enum CephalonTone
 {
     /// <summary>Calm blue — idle presence.</summary>
     Calm,
 
-    /// <summary>Working blue — brighter, denser activity (thinking).</summary>
+    /// <summary>Working blue — brighter, denser activity (thinking/working).</summary>
     Working,
 
     /// <summary>Voice green accent — speaking.</summary>
     Voice,
 
-    /// <summary>Alarm red — denial / error. Only with a REAL authorization event.</summary>
+    /// <summary>Alarm red — real alarm/denial states only (Core SignalLevel, CE-2).</summary>
     Error,
 
     /// <summary>Dull red — security lock. Fail-closed rendered visually.</summary>
@@ -56,12 +56,20 @@ public static class StateTraitTable
         //                    eye   pupil  glow  part  wobble motion tone
         [CephalonState.Idle]     = new(1.00, 1.00, 0.45, 0.50, 0.018, 1.0, CephalonTone.Calm),
 
-        // Reserved rows — present so the machine is complete and extensible,
-        // but Phase 1 runtime never activates them (no Core connection exists yet).
-        [CephalonState.Thinking] = new(0.72, 0.85, 0.75, 0.90, 0.045, 2.2, CephalonTone.Working),
-        [CephalonState.Speaking] = new(0.85, 1.10, 0.70, 0.75, 0.030, 1.8, CephalonTone.Voice),
-        [CephalonState.Denied]   = new(0.50, 1.20, 0.85, 0.60, 0.050, 2.5, CephalonTone.Error),
-        [CephalonState.Locked]   = new(0.18, 1.35, 0.35, 0.15, 0.010, 0.3, CephalonTone.Locked),
+        // Reserved rows — present so the machine is complete and extensible.
+        // CE-2 activates them with REAL Core events (mode → ExpressionBridge → here).
+        [CephalonState.Thinking]   = new(0.72, 0.85, 0.75, 0.90, 0.045, 2.2, CephalonTone.Working),
+        [CephalonState.Speaking]   = new(0.85, 1.10, 0.70, 0.75, 0.030, 1.8, CephalonTone.Voice),
+        [CephalonState.Denied]     = new(0.50, 1.20, 0.85, 0.60, 0.050, 2.5, CephalonTone.Error),
+        [CephalonState.Locked]     = new(0.18, 1.35, 0.35, 0.15, 0.010, 0.3, CephalonTone.Locked),
+
+        // CE-2 rows (real Core modes): a running task is steady bright work; recovery
+        // is subdued honest calm (never red — it is healing, not failure); Alert is
+        // the wide-eyed alarm — red arrives ONLY because Core declared SignalLevel,
+        // never as a renderer mood guess.
+        [CephalonState.Working]     = new(0.72, 0.92, 0.75, 0.85, 0.032, 1.5, CephalonTone.Working),
+        [CephalonState.Recovering]  = new(0.62, 1.05, 0.40, 0.35, 0.014, 0.7, CephalonTone.Calm),
+        [CephalonState.Alert]       = new(0.95, 1.28, 0.95, 0.90, 0.055, 2.8, CephalonTone.Error),
     };
 
     /// <summary>Number of mapped states (tests assert full coverage).</summary>

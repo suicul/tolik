@@ -16,4 +16,10 @@
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- CE-2: the renderer consumes the REAL shared expression contract (ExpressionMode).
+         TOLIK.Contracts is a dependency-free plain library — no lane coupling beyond this. -->
+    <ProjectReference Include="..\TOLIK.Contracts\TOLIK.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

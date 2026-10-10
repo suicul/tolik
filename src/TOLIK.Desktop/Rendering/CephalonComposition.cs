@@ -118,8 +118,9 @@ public sealed class CephalonComposition
         _tilt.CenterY = cy;
         dc.PushTransform(_tilt);
 
-        // 1) inner glow halo — breathing heart of the composition
-        dc.PushOpacity(0.30 + 0.55 * p.GlowIntensity);
+        // 1) inner glow halo — breathing heart of the composition; voice spectrum
+        //    (CE-3 axis) adds a live shimmer on top — exactly zero while silent.
+        dc.PushOpacity(0.30 + (0.55 * p.GlowIntensity) + (0.10 * p.SpectrumIntensity));
         double glowR = r * (1.55 + 0.35 * p.GlowIntensity) * p.ShellExpansion;
         dc.DrawEllipse(assets.Glow, null, new Point(cx, cy), glowR, glowR);
         dc.Pop();
@@ -194,7 +195,7 @@ public sealed class CephalonComposition
         }
 
         // 11) energy particles (ambient motes between shell layers)
-        DrawParticles(dc, cx, cy, r, time, p.ParticleEnergy, policy, quality, assets);
+        DrawParticles(dc, cx, cy, r, time, p.ParticleEnergy, p.SpectrumIntensity, policy, quality, assets);
 
         dc.Pop(); // tilt
 
@@ -286,7 +287,7 @@ public sealed class CephalonComposition
 
     private void DrawParticles(
         DrawingContext dc, double cx, double cy, double r, double time,
-        double energy, ModePolicy policy, RenderQuality quality, ToneAssets assets)
+        double energy, double spectrum, ModePolicy policy, RenderQuality quality, ToneAssets assets)
     {
         if (!policy.AllowParticles)
         {
@@ -303,11 +304,12 @@ public sealed class CephalonComposition
         for (int i = 0; i < count; i++)
         {
             ref readonly Particle q = ref _particles[i];
-            double speed = q.Speed * (0.6 + 0.8 * energy);
+            // Voice spectrum quickens the motes (CE-3 axis) — exactly zero while silent.
+            double speed = q.Speed * (0.6 + (0.8 * energy) + (0.6 * Math.Clamp(spectrum, 0.0, 1.0)));
             double a = q.Angle + (speed * time);
             double radius = r * q.Radius * (1.0 + (0.02 * Math.Sin((time * q.Speed * 3.0) + q.Phase)));
             double alpha = Math.Clamp(
-                (0.25 + 0.75 * energy) * (0.55 + (0.45 * Math.Sin((time * 2.2) + q.Phase))),
+                (0.25 + (0.75 * energy)) * (0.55 + (0.45 * Math.Sin((time * 2.2) + q.Phase))),
                 0.0, 1.0);
 
             GeoPoint head = CephalonGeometry.Polar(cx, cy, radius, a);
@@ -354,7 +356,15 @@ public sealed class CephalonComposition
                 $"frame    {EwmaMsText}\n" +
                 $"quality  {quality}\n" +
                 $"mode     {ModeName}\n" +
-                "core     local, no Core connection";
+                $"core     {CoreLine}";
+            if (!string.IsNullOrEmpty(ExpressionLine))
+            {
+                text += "\nexpr     " + ExpressionLine;
+            }
+            if (!string.IsNullOrEmpty(ReasonLine))
+            {
+                text += "\nreason   " + ReasonLine;
+            }
             if (!string.IsNullOrEmpty(hotkeyLine))
             {
                 text += "\n" + hotkeyLine;
@@ -384,6 +394,17 @@ public sealed class CephalonComposition
 
     /// <summary>Current mode name, set by the host for caption/debug text.</summary>
     public string ModeName { get; set; } = "Normal";
+
+    /// <summary>Connection truth (CE-2), set by the host from the Core link presenter.
+    /// The default preserves the exact Phase 1 line for an unlinked host.</summary>
+    public string CoreLine { get; set; } = "local, no Core connection";
+
+    /// <summary>Expression truth (what the body is doing right now); null = hidden.
+    /// Phase 1 default: hidden (no Core expression stream existed).</summary>
+    public string? ExpressionLine { get; set; }
+
+    /// <summary>Token-free one-line reason for offline/auth-rejected states; null = hidden.</summary>
+    public string? ReasonLine { get; set; }
 
     // ---------- quality mapping ----------
 

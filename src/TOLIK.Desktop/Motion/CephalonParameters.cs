@@ -20,6 +20,7 @@ public sealed class CephalonParameters
     public const double ShellTiltMin = -0.05, ShellTiltMax = 0.05;
     public const double WobbleMin = 0.0, WobbleMax = 0.06;
     public const double DriftMin = -1.5, DriftMax = 1.5;
+    public const double SpectrumMin = 0.0, SpectrumMax = 1.0;
 
     /// <summary>Eyelid aperture (mechanical shutter, 0 = shut).</summary>
     public double EyeOpen = 1.0;
@@ -58,6 +59,11 @@ public sealed class CephalonParameters
     /// <summary>Orientation drift multiplier applied to base rotation speeds.</summary>
     public double DriftMultiplier = 1.0;
 
+    /// <summary>Voice/audio spectrum energy (0 = silent). CE-2 carries Core's composed
+    /// value truthfully (honestly 0 until CE-3 wires the real TTS bands); the renderer
+    /// adds EXACTLY zero effect for zero input.</summary>
+    public double SpectrumIntensity;
+
     /// <summary>Enforces all documented bounds; NaN/Infinity fall back to sane defaults.</summary>
     public void Clamp()
     {
@@ -76,6 +82,7 @@ public sealed class CephalonParameters
         IrisRotation = Wrap(IrisRotation);
         WobblePhase = Wrap(WobblePhase);
         DriftMultiplier = Clean(DriftMultiplier, 1.0, DriftMin, DriftMax);
+        SpectrumIntensity = Clean(SpectrumIntensity, 0.0, SpectrumMin, SpectrumMax);
     }
 
     public void CopyTo(CephalonParameters other)
@@ -96,6 +103,7 @@ public sealed class CephalonParameters
         other.IrisRotation = IrisRotation;
         other.WobblePhase = WobblePhase;
         other.DriftMultiplier = DriftMultiplier;
+        other.SpectrumIntensity = SpectrumIntensity;
     }
 
     private static double Clean(double value, double fallback, double min, double max) =>

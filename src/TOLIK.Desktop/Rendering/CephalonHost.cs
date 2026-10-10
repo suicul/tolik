@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
+using TOLIK.Desktop.Bridge;
 using TOLIK.Desktop.Motion;
 using TOLIK.Desktop.Performance;
 using TOLIK.Desktop.Presence;
@@ -21,6 +22,7 @@ public sealed class CephalonHost : FrameworkElement
     private readonly CephalonAnimator _animator;
     private readonly FrameGovernor _governor;
     private readonly CephalonComposition _composition = new();
+    private readonly ExpressionLinkPresenter _link;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
     private readonly Stopwatch _measure = new();
     private readonly string? _debugExtraLine;
@@ -48,6 +50,7 @@ public sealed class CephalonHost : FrameworkElement
     {
         _animator = new CephalonAnimator(config, random);
         _governor = new FrameGovernor(_policy.TargetFps);
+        _link = new ExpressionLinkPresenter(_animator);
         _debugExtraLine = debugExtraLine;
         _composition.ModeName = _mode.ToString();
 
@@ -59,6 +62,17 @@ public sealed class CephalonHost : FrameworkElement
     public CephalonAnimator Animator => _animator;
 
     public FrameGovernor Governor => _governor;
+
+    /// <summary>CE-2 link presentation policy (drive vs honest idle, debug lines).
+    /// The App feeds it client snapshots/frames; the render loop ticks staleness.</summary>
+    public ExpressionLinkPresenter CoreLink => _link;
+
+    /// <summary>Link state snapshot from the App's WS client (UI thread).</summary>
+    public void OnCoreLinkState(LinkSnapshot snapshot) => _link.OnLinkState(snapshot);
+
+    /// <summary>A real expression frame from Core (UI thread) — becomes animator
+    /// targets; the body eases there (nothing snaps).</summary>
+    public void OnCoreExpressionFrame(ExpressionFrame frame) => _link.OnExpressionFrame(frame);
 
     /// <summary>Applies a presence mode: FPS ceiling, motion scale, overlay permissions.
     /// The debug flag is only kept if the new mode still allows diagnostics.</summary>
@@ -112,6 +126,13 @@ public sealed class CephalonHost : FrameworkElement
         double dt = _hasEventTime ? now - _lastEventTime : 1.0 / 60.0;
         _lastEventTime = now;
         _hasEventTime = true;
+
+        // CE-2: age the Core link (drops a stale drive — never a held pose on a
+        // dead stream) and refresh the honest debug lines. Cheap; every tick.
+        _link.Tick();
+        _composition.CoreLine = _link.CoreLine;
+        _composition.ExpressionLine = _link.ExpressionLine;
+        _composition.ReasonLine = _link.ReasonLine;
 
         if (!_governor.ShouldRender(now))
         {
