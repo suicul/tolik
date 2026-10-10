@@ -100,14 +100,16 @@ if (-not (Test-Path $tokenPath)) {
 }
 Write-Host "Session token present." -ForegroundColor Green
 
-# 5. Windows Agent in its own window (dist exe preferred, dotnet run fallback)
+# 5. Windows Agent in its own window (dist exe preferred, dotnet run fallback).
+# Token flows via TOLIK_SESSION_TOKEN env (audit m6): command lines are readable
+# by any local process via Win32_Process (threats T3/T8) — never the CLI arg.
 if (-not $NoAgent) {
     $token = (Get-Content $tokenPath -Raw).Trim()
     $agentExe = Join-Path $root 'dist\agent\TOLIK.Agent.exe'
     if (Test-Path $agentExe) {
-        $agentCmd = "`$env:TOLIK_ALLOWED_ROOTS='$root'; & '$agentExe' --core-url $CoreUrl --token '$token' --heartbeat-sec $HeartbeatSec"
+        $agentCmd = "`$env:TOLIK_ALLOWED_ROOTS='$root'; `$env:TOLIK_SESSION_TOKEN='$token'; & '$agentExe' --core-url $CoreUrl --heartbeat-sec $HeartbeatSec"
     } else {
-        $agentCmd = "`$env:TOLIK_ALLOWED_ROOTS='$root'; dotnet run --project src\TOLIK.Agent -- --core-url $CoreUrl --token '$token' --heartbeat-sec $HeartbeatSec"
+        $agentCmd = "`$env:TOLIK_ALLOWED_ROOTS='$root'; `$env:TOLIK_SESSION_TOKEN='$token'; dotnet run --project src\TOLIK.Agent -- --core-url $CoreUrl --heartbeat-sec $HeartbeatSec"
     }
     Write-Host "Starting Windows Agent..." -ForegroundColor Yellow
     Start-Process -FilePath "powershell" -ArgumentList @("-NoExit", "-Command", $agentCmd) -WorkingDirectory $root -WindowStyle Normal | Out-Null

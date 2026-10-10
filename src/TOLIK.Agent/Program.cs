@@ -7,7 +7,7 @@ using TOLIK.Contracts;
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
 var coreUrlOption = new Option<string>("--core-url", "TOLIK Core base URL (e.g., http://127.0.0.1:5080)") { IsRequired = true };
-var tokenOption = new Option<string>("--token", "Session token for authentication") { IsRequired = true };
+var tokenOption = new Option<string>("--token", "Session token (or TOLIK_SESSION_TOKEN env — preferred: command lines are readable by any local process, threats T3/T8)") { IsRequired = false };
 var heartbeatOption = new Option<int>("--heartbeat-sec", "Heartbeat interval in seconds") { IsRequired = false };
 var voiceOption = new Option<bool>("--voice", "Direct mic path (voice-runtime-v2.md 0.10): capture -> VAD -> turn -> playback") { IsRequired = false };
 var voiceServiceOption = new Option<string>("--voice-service-url", () => "http://127.0.0.1:9660", "Voice service base URL (VAD /vad/detect)") { IsRequired = false };
@@ -29,6 +29,17 @@ rootCommand.SetHandler(async (coreUrl, token, heartbeatSec, voice, voiceServiceU
     Console.WriteLine("TOLIK.WindowsAgent starting...");
     Console.WriteLine("Core URL: " + coreUrl);
     Console.WriteLine("Heartbeat: " + heartbeatInterval.TotalSeconds + "s");
+
+    // Env-token fallback (audit m6): prefer the environment over the command line —
+    // command lines are readable by any local process via Win32_Process (threats T3/T8).
+    // Fail closed: the agent never starts without a token (never an anonymous agent).
+    token ??= Environment.GetEnvironmentVariable("TOLIK_SESSION_TOKEN");
+    if (string.IsNullOrWhiteSpace(token))
+    {
+        Console.Error.WriteLine("No session token: pass --token or set TOLIK_SESSION_TOKEN (env preferred).");
+        Environment.ExitCode = 1;
+        return;
+    }
 
     var agent = WindowsAgent.Create(coreUrl, token);
     Console.WriteLine(agent.StartupMessage());
