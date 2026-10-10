@@ -54,19 +54,27 @@ Embodiment & Emergent Expression System. Мастер-план: **docs/cephalon-
 свободной для игр, без новых NuGet-зависимостей; геометрия параметрическая →
 перенос в VR/3D). Фазы CE-1..7 (presence prototype → state-driven → voice-
 reactive → desktop awareness → DSL → learned → multi-device).
-**Реализовано (pre-Genesis):** CE-2 core (commit 0841765, 539/539 green):
-ExpressionState typed (cognitive/emotional subset/социальные/голосовые/
-системные — реальные источники, Normalized fail-closed) + ExpressionOutput
-(bounded ranges, ExpressionMode hint — цвет не единственный носитель эмоции) +
-ExpressionComposer — детерминированная ЧИСТАЯ функция (state, prev, dt) →
+**Реализовано (pre-Genesis):** **CE-1 DONE (commit 854a8d8, designer-лейн):**
+Desktop Presence Prototype — WPF оверлей (transparent/borderless/topmost,
+PerMonitorV2 DPI, click-through passive ↔ interactive, tray + Ctrl+Alt+T,
+multi-monitor), оригинальная процедурная композиция (слоистая оболочка: 6 arc
+сегментов + 3 деформируемых arc + corner brackets + energy spokes; глаз: facet
+iris — угловая сигнатура TOLIK, pupil с rim/glint, механические shutter веки;
+energy motes), **процедурный idle с ограниченной стохастичностью** (saccades
+2-6.5s, blink 3.5-9s, pulses, drift, breathing — seeded, bounded, без повторного
+цикла), 7 режимов присутствия (typed policy table; Hidden=5fps frozen; Gaming/
+Presentation force click-through), FrameGovernor (FPS cap + EWMA adaptive
+quality, degrade fast/recover slow), honest debug («core: local, no Core
+connection» — НИКОГДА фейковое состояние). **576/576 тестов** (539 foundation +
+37 desktop). Инварианты: renderer чист (нет identity/permissions/network —
+проверено); красный ТОЛЬКО из Error/Locked (реальные события, Phase 2/3).
+**CE-2 core (commit 0841765):** ExpressionState typed + ExpressionOutput +
+ExpressionComposer — детерминированная чистая функция (state, prev, dt) →
 output: приоритет locked>critical>voice>task>emotion>idle, параметры
-НАКАПЛИВАЮТСЯ из всех источников (amusement+frustration+speaking = ОДНО
-смешанное выражение — никогда три клипа), спектр low→оболочка/mid→глаз/
-high→частицы, переходы экспоненциальные (никогда мгновенные), без LLM/часов/
-случайности (стохастичность idle — seeded generator renderer'а), без NaN +
-12 тестов (смешивание/нормализация/переходы/приоритеты/аудио/interruption/
-disconnect — эмоции никогда не трогают authorization). CE-1 (overlay +
-геометрия + procedural idle) — designer-лейн в процессе.
+НАКАПЛИВАЮТСЯ (одно смешанное выражение), спектр low→оболочка/mid→глаз/
+high→частицы, переходы экспоненциальные, без LLM/NaN + 12 тестов. Остаток
+CE-2: State Watcher + WS-broadcast (ONE COMPOSER MANY RENDERERS — десктоп +
+Android потребляют один провод), CE-3 voice-reactive (реальный TTS stream),
 **Блокер снят:** прежний stall designer-линии (04.10, три подряд, ноль записей)
 не повторился — свежая сессия работает.
 
