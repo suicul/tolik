@@ -178,7 +178,7 @@ autonomy). Genesis НЕ заканчивается с ceremony (Development → 
 Autonomy→Authorization→Capability→Execution→Verification; НИКОГДА
 Emotion/Curiosity/Boredom/Relationship/Memory→Permission.
 
-## Track 14 — Realistic Autonomy: Trust + Consent + Reward (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
+## Track 14 — Realistic Autonomy: Trust + Consent + Reward (approved 09.10.2026) ✅ pre-Genesis models DONE 10.10.2026 (RA-0..2), post-Genesis queued
 Full plan: **docs/realistic-autonomy.md** (директива 09.10.2026). Главный принцип:
 **DREAM ≠ REALISTIC ≠ FUTURE** — не вся футуристическая capability в первой
 реализации. **Спектр автономии L0-L5** (Reactive/Assisted/Supervised/Bounded/
@@ -211,6 +211,13 @@ RESTING ≠ OFFLINE (события будят). **Реалистичный road
 Real Autonomy/**Real-Time Voice (✓ СДЕЛАНО M0-M8)**/Multimodal/Genesis/
 Computer Use/Mind/Self-Development/Advanced (DREAM). Фазы RA-0..RA-4;
 pre-Genesis: RA-0/1/2; post-Genesis: RA-3/4.
+**Реализовано (pre-Genesis models, 497/497 green):** RA-0..2 (commit 3fe9ef4:
+AutonomyLevel L0-L5 spectrum + Cap (L0→Confirm/L1→Notify, Deny неизменен на
+всех уровнях); TrustProfile — 7 измерений, ceiling 0.95, provenance ring,
+негатив сильнее позитива, GoodJudgment evidence, decay к baseline; ConsentModel
+— target-bound revocable grants, ParseGrantPhrase (неоднозначное → OneTime,
+absence lease 8h), RevokeAll). Остаток (post-Genesis): RA-3..RA-4 (реальные
+reward'ы/anti-reward-hacking enforcement/firsts).
 
 ## Track 15 — Identity & Presence: Core Migration + Presence Manager + Embodiment (approved 09.10.2026) 🔲 plan done, no implementation (PRE-GENESIS)
 Full plan: **docs/identity-presence.md** (Master Spec директива 09.10.2026; остальное

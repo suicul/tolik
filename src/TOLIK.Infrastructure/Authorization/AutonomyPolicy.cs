@@ -55,7 +55,7 @@ public static class AutonomyPolicy
         if (ctx.PreAuthorizedRuleMatches) return AutonomyDecision.Autonomous;
         // Unregistered capability — fail closed.
         if (descriptor is null) return AutonomyDecision.Deny;
-        return descriptor.DeclaredRisk switch
+        var raw = descriptor.DeclaredRisk switch
         {
             ToolRiskLevel.ReadOnly => AutonomyDecision.Autonomous,
             ToolRiskLevel.LowRisk => ctx.Reversible
@@ -65,5 +65,9 @@ public static class AutonomyPolicy
             ToolRiskLevel.Critical => AutonomyDecision.MfaConfirm,
             _ => AutonomyDecision.Deny
         };
+        // Autonomy spectrum cap (realistic-autonomy.md RA-0): the configured level
+        // demotes decisions (L0→Confirm, L1 Autonomous→Notify); default L2 leaves
+        // them unchanged; Deny stays Deny. Identity/level caps NEVER relax a Deny.
+        return AutonomyLevelPolicy.Cap(raw);
     }
 }

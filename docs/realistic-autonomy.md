@@ -223,11 +223,26 @@ anomaly/user return.
 
 ```text
 RA-0 Autonomy spectrum L0-L5 + домены + бюджеты + stop conditions  [независимо;
-     governance AutonomyPolicy расширение; deterministic]
+     governance AutonomyPolicy расширение; deterministic] — DONE 10.10.2026
+     (commit 3fe9ef4, +17 тестов: AutonomyLevel L0-L5 (Reactive/Assisted/
+     Supervised/Bounded/Proactive/LongTermExperimental), TOLIK_AUTONOMY_LEVEL
+     default L2; AutonomyLevelPolicy.Cap — L0 demote Autonomous→Confirm, L1 →
+     Notify (never silent), L2+ untouched; Deny stays Deny at every level —
+     authorization outranks the level; домены/бюджеты — post-Genesis wiring)
 RA-1 TrustModel (многомерный + provenance + decay + НЕ permission) [RA-0;
-     поверх существующих memory rules/speaker tiers]
+     поверх существующих memory rules/speaker tiers] — DONE 10.10.2026
+     (commit 3fe9ef4: TrustProfile — СЕМЬ измерений reliability/identity/social/
+     technical/task_execution/communication/safety, НЕ один TrustScore=97;
+     ceiling 0.95 (никогда абсолютный); provenance ring 16 (Reason/Confidence/At
+     обязательны); негатив сильнее позитива; GoodJudgment evidence; decay к
+     baseline 7d→~50% (SpeakerProfile-TTL паттерн); НИКОГДА self-escalating)
 RA-2 ConsentModel (уровни + natural-language → grants + revocable) [RA-0;
-     существующие ConfirmationStore/leases]
+     существующие ConfirmationStore/leases] — DONE 10.10.2026 (commit 3fe9ef4:
+     ConsentGrant target-bound (почини голосовой ≠ modify anything); scopes
+     OneTime/TaskScoped/SessionScoped/DomainScoped/PersistentLowRisk;
+     ParseGrantPhrase — bounded фразы → grants, неоднозначное → OneTime (никогда
+     широкое право), absence lease bounded 8h; RevokeAll — stop + preserve;
+     расширение ConfirmationStore/leases — без параллельных систем)
 RA-3 Reward system (типы + memory + anti-reward-hacking +           [RA-1;
      effort-vs-result; Cephalon celebration)
 RA-4 Genesis firsts + first failure + first self-discovery           [RA-3;
