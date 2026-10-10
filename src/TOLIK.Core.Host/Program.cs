@@ -80,6 +80,10 @@ builder.Services.AddHostedService<ModelPrewarmService>();
 builder.Services.AddSingleton<VoiceAdaptationChannel>();
 builder.Services.AddSingleton<VoiceAdaptationPolicy>();
 builder.Services.AddHostedService<VoiceAdaptationService>();
+// Continuous autonomy (docs/continuous-autonomy.md CA-1): the long-running task's
+// authorization context store; the dispatch-time enforcement remains with the
+// existing AuthorizationLeaseStore (the two extend each other, no duplication).
+builder.Services.AddSingleton<TOLIK.Infrastructure.Identity.TaskLeaseStore>();
 // Voice enrollment state machines (docs/voice-identity.md VI-3/VI-4): pure, thread-safe
 // DI singletons — per-owner genesis voice enrollment and the trusted-person
 // active-enrollment map (TTL 5 min). Storage stays in DurableMemoryStore.
@@ -1124,6 +1128,26 @@ app.MapPost("/tasks", async (TaskRequest request, HttpContext context, IdentityS
 
     var task = context.RequestServices.GetRequiredService<TaskLifecycle>().Create(request.Description ?? string.Empty);
     realtime.StampTaskOwner(task.Id, principal.UserId);
+    // CA-0/CA-1 (docs/continuous-autonomy.md): an explicit scope → the task's
+    // authorization lease (capability allowlist + forbidden ops + expiry = maxDuration
+    // ?? 8h) + the long-running attachment (scope/journal surface). Scopeless tasks
+    // behave exactly as before (no lease, no attachment).
+    TaskLeaseInfo? leaseInfo = null;
+    if (request.HasScope)
+    {
+        var taskLeases = context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Identity.TaskLeaseStore>();
+        var lifecycle2 = context.RequestServices.GetRequiredService<TaskLifecycle>();
+        leaseInfo = taskLeases.Issue(task.Id,
+            request.AllowedCapabilities ?? [], request.Project!,
+            request.MaxDurationHours is { } hours && hours > 0 ? TimeSpan.FromHours(hours) : null,
+            request.ForbiddenOperations);
+        lifecycle2.AttachPlan(task.Id, new TOLIK.Infrastructure.Tasks.TaskScope(
+            request.Project!, request.Objective ?? request.Description ?? string.Empty,
+            request.AllowedCapabilities ?? [], request.AllowedRoots ?? [],
+            request.MaxDurationHours is { } h2 && h2 > 0 ? TimeSpan.FromHours(h2) : null,
+            null, request.ForbiddenOperations ?? [], request.StopConditions ?? [],
+            request.CompletionCriteria ?? string.Empty));
+    }
     await using (var db = await context.RequestServices.GetRequiredService<IDbContextFactory<TolikDbContext>>().CreateDbContextAsync(cancellationToken))
     {
         db.Tasks.Add(new TolikTaskEntity { Id = task.Id, UserId = principal.UserId, Description = task.Description, Status = task.Status.ToString(), CreatedAt = task.CreatedAt });
@@ -1192,6 +1216,49 @@ app.MapGet("/tasks/{taskId:guid}/events", async (Guid taskId, HttpContext contex
     if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
     return Results.Ok(lifecycle.GetEvents(taskId));
 });
+app.MapPost("/tasks/{taskId:guid}/journal", async (Guid taskId, TaskJournalRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, DurableMemoryStore durableMemory, AuditWriter audit, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    // CA-4 (docs/continuous-autonomy.md §9): the structured task journal —
+    // timestamp/event/action/result/reason/next step; NO transcripts/secrets —
+    // safe summaries only. Feeds natural conversation later («что ты делал?»).
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
+    if (string.IsNullOrWhiteSpace(request?.Event) || request.Event.Length > 2048)
+        return Results.BadRequest(new { error = "invalid_journal_event" });
+    var entry = new TOLIK.Infrastructure.Tasks.TaskJournalEntry(
+        DateTimeOffset.UtcNow, request.Event.Trim(), request.Action?.Length <= 2048 ? request.Action : null,
+        request.Result?.Length <= 2048 ? request.Result : null, request.Reason?.Length <= 2048 ? request.Reason : null,
+        request.NextStep?.Length <= 2048 ? request.NextStep : null);
+    lifecycle.AppendJournal(taskId, entry);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private,
+        $"task.journal: {entry.Timestamp:HH:mm} — {entry.Event}", "task.journal", 0.7, cancellationToken);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "task.journal", "ALLOW", $"task:{taskId:D}", cancellationToken);
+    return Results.Ok(new { appended = true });
+});
+app.MapGet("/tasks/{taskId:guid}/journal", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
+    return Results.Ok(lifecycle.GetJournal(taskId));
+});
+app.MapPost("/tasks/{taskId:guid}/revoke-lease", async (Guid taskId, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Identity.TaskLeaseStore taskLeases, AuditWriter audit, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    // CA-1/§16: «Толик, прекращай» — the lease revocation: the next dispatched step
+    // is denied (lease_revoked) while the task state/journal/progress stay preserved
+    // for inspection. Own-task pattern; Emergency Stop (stronger) stays separate.
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
+    var revoked = taskLeases.Revoke(taskId, "revoked_by_owner");
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "task.lease.revoked", "ALLOW",
+        revoked ? "lease_revoked" : "no_lease", principal, null, null, taskId.ToString("D"), "revoked", cancellationToken);
+    return Results.Ok(new { revoked });
+});
 app.MapPost("/tasks/{taskId:guid}/plan", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
@@ -1241,7 +1308,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
         confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "approved", cancellationToken);
     return Results.Ok(new { approved = true, confirmationId, note = "Re-run the execute request; the bound confirmation will be consumed once." });
 });
-app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, TOLIK.Infrastructure.Identity.TaskLeaseStore taskLeases, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1285,6 +1352,17 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 var validLease = leases.Validate(lease.Id);
                 if (validLease is null)
                     throw new UnauthorizedAccessException("lease_invalid:expired_or_revoked");
+                // CA-1 (docs/continuous-autonomy.md §2): the long-running task's scope
+                // lease — ADDITIVE to the existing guard: a scope-holding task's dispatched
+                // capability must be inside the lease's allowlist (not forbidden, not
+                // expired). Scopeless tasks behave exactly as before (no lease → no check).
+                var scopeLease = taskLeases.Get(taskId);
+                if (scopeLease is not null)
+                {
+                    var scopeValidation = taskLeases.Validate(taskId, capability.ToString());
+                    if (!scopeValidation.Allowed)
+                        throw new UnauthorizedAccessException($"task_scope:{scopeValidation.Reason}");
+                }
                 var confirmationValid = confirmations.Consume(taskId, currentStep, capability, resource);
                 var decision = AuthorizationPolicy.Evaluate(new AuthorizationRequest(
                     principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: false,
@@ -3314,7 +3392,21 @@ public sealed record AgentConnection(Guid AgentId, IReadOnlySet<AgentCapability>
     public bool IsStale => DateTimeOffset.UtcNow - LastSeen > TimeSpan.FromMinutes(10);
     public string Status => IsStale ? "Stale" : "Connected";
 }
-public sealed record TaskRequest(string? Description);
+public sealed record TaskRequest(string? Description, string? Project = null, string? Objective = null,
+    IReadOnlyList<string>? AllowedCapabilities = null, IReadOnlyList<string>? AllowedRoots = null,
+    double? MaxDurationHours = null, IReadOnlyList<string>? ForbiddenOperations = null,
+    IReadOnlyList<string>? StopConditions = null, string? CompletionCriteria = null)
+{
+    /// <summary>CA-0/§4 (docs/continuous-autonomy.md): an explicit bounded scope for broad
+    /// instructions. Absent → a scopeless task (the existing behavior unchanged); present →
+    /// the task gets a TaskAuthorizationLease (capability allowlist + forbidden ops +
+    /// expiry) enforced additively at dispatch.</summary>
+    public bool HasScope => !string.IsNullOrWhiteSpace(Project);
+}
+
+/// <summary>CA-4/§9: one structured task-journal entry request. Safe summaries only —
+/// no transcripts, no secrets (the journal feeds natural conversation later).</summary>
+public sealed record TaskJournalRequest(string? Event, string? Action = null, string? Result = null, string? Reason = null, string? NextStep = null);
 public sealed record AgentHeartbeatRequest(Guid AgentId);
 
 /// <summary>Control-flow for a failed plan step: stop without cascading, report partial results.</summary>

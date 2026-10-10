@@ -3,13 +3,31 @@ namespace TOLIK.Infrastructure.Tasks;
 public enum TolikTaskStatus { Pending, Running, Paused, Completed, Failed, Cancelled }
 public sealed record TolikTask(Guid Id, string Description, TolikTaskStatus Status, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
 public sealed record TaskLifecycleEvent(Guid TaskId, string Kind, string? Detail, DateTimeOffset OccurredAt);
+/// <summary>
+/// CA-0 extended long-running state (docs/continuous-autonomy.md §1): a SEPARATE tracked
+/// concept layered over the existing <see cref="TolikTaskStatus"/> — the existing enum,
+/// transition tries and endpoints are untouched. Phase mirrors the lifecycle status;
+/// Scope is the explicit bounded authorization context attached at creation (CA-0/§4);
+/// LastJournal is the newest structured journal entry (CA-4/§9); Progress is the
+/// evidence-derived snapshot (CA-4/§8). Consumed by the future TaskSupervisor (CA-2).
+/// </summary>
+public sealed record LongRunningState(string Phase, TaskScope? Scope, TaskJournalEntry? LastJournal, TaskProgressSnapshot? Progress);
 public sealed class TaskLifecycle
 {
     private const int MaxActiveTasks = 100;
     private readonly ConcurrentDictionary<Guid, TolikTask> tasks = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> cancellations = new();
     private readonly ConcurrentQueue<TaskLifecycleEvent> events = new();
-    public TolikTask Create(string description) { if (string.IsNullOrWhiteSpace(description) || description.Length > 4096) throw new ArgumentException("Task description is invalid."); if (tasks.Values.Count(x => x.Status is TolikTaskStatus.Pending or TolikTaskStatus.Running) >= MaxActiveTasks) throw new InvalidOperationException("Task limit reached."); var task = new TolikTask(Guid.NewGuid(), description, TolikTaskStatus.Pending, DateTimeOffset.UtcNow, null); tasks[task.Id] = task; return task; }
+    private readonly ConcurrentDictionary<Guid, LongRunningLog> longRunning = new();
+
+    /// <summary>Per-task long-running attachment: the explicit scope + the structured journal, guarded by one lock.</summary>
+    private sealed class LongRunningLog
+    {
+        public readonly object Gate = new();
+        public TaskScope? Scope;
+        public readonly List<TaskJournalEntry> Entries = new();
+    }
+    public TolikTask Create(string description) { if (string.IsNullOrWhiteSpace(description) || description.Length > 4096) throw new ArgumentException("Task description is invalid."); if (tasks.Values.Count(x => x.Status is TolikTaskStatus.Pending or TolikTaskStatus.Running) >= MaxActiveTasks) throw new InvalidOperationException("Task limit reached."); var task = new TolikTask(Guid.NewGuid(), description, TolikTaskStatus.Pending, DateTimeOffset.UtcNow, null); tasks[task.Id] = task; longRunning[task.Id] = new LongRunningLog(); return task; }
     public TolikTask? Get(Guid id) => tasks.TryGetValue(id, out var task) ? task : null;
     public bool TryCancel(Guid id)
     {
@@ -57,7 +75,87 @@ public sealed class TaskLifecycle
         return true;
     }
     public void ReportProgress(Guid id, string detail) => Publish(id, "TaskProgress", detail);
+    /// <summary>
+    /// Attaches the explicit bounded scope (docs/continuous-autonomy.md CA-0/§4) to a task —
+    /// the authorization context is retained exactly as created (CA-0/§15) and never
+    /// reinterpreted later by personality/memory. No-op for unknown tasks (fail closed).
+    /// The in-memory attachment is the runtime surface; persistence of scope/journal goes
+    /// through the endpoints (the existing memory store).
+    /// </summary>
+    public void AttachPlan(Guid taskId, TaskScope scope)
+    {
+        if (scope is null) throw new ArgumentNullException(nameof(scope));
+        if (!longRunning.TryGetValue(taskId, out var log)) return;
+        lock (log.Gate) { log.Scope = scope; }
+        Publish(taskId, "TaskPlanAttached", scope.Project);
+    }
+    /// <summary>
+    /// Appends a structured journal entry (CA-4/§9): timestamp/event/action/result/reason/
+    /// next step — safe summaries ONLY (never transcripts/secrets). Thread-safe: entries
+    /// are appended under the per-task gate; the progress snapshot is re-derived from
+    /// evidence. No-op for unknown tasks (fail closed).
+    /// </summary>
+    public void AppendJournal(Guid taskId, TaskJournalEntry entry)
+    {
+        if (entry is null) throw new ArgumentNullException(nameof(entry));
+        if (!longRunning.TryGetValue(taskId, out var log)) return;
+        lock (log.Gate) { log.Entries.Add(entry); }
+        Publish(taskId, "TaskJournal", entry.Event);
+    }
+    /// <summary>
+    /// The evidence-derived progress snapshot (CA-4/§8) — REAL progress from actual journal
+    /// outcomes, never fabricated (§50): a running task NEVER reports 100 (the in-flight/
+    /// next step counts as uncompleted work); 100 comes only from the lifecycle's own
+    /// Completed terminal state; 0 when no outcomes are observed. Null when nothing is
+    /// attached (no scope, no entries).
+    /// </summary>
+    public TaskProgressSnapshot? GetProgress(Guid taskId)
+    {
+        if (!longRunning.TryGetValue(taskId, out var log)) return null;
+        lock (log.Gate)
+        {
+            if (log.Scope is null && log.Entries.Count == 0) return null;
+            tasks.TryGetValue(taskId, out var task);
+            return BuildLongRunningState(task, log.Scope, log.Entries).Progress;
+        }
+    }
+    /// <summary>The attached scope (null when absent/unknown) — the dispatch-time scope gate reads it.</summary>
+    public TaskScope? GetScope(Guid taskId)
+    {
+        if (!longRunning.TryGetValue(taskId, out var log)) return null;
+        lock (log.Gate) { return log.Scope; }
+    }
+    /// <summary>The journal entries in append order (empty when none) — the GET endpoint merges them with the durable memory copy.</summary>
+    public IReadOnlyList<TaskJournalEntry> GetJournal(Guid taskId)
+    {
+        if (!longRunning.TryGetValue(taskId, out var log)) return Array.Empty<TaskJournalEntry>();
+        lock (log.Gate) { return log.Entries.ToArray(); }
+    }
     public IReadOnlyList<TaskLifecycleEvent> GetEvents(Guid id) => events.Where(x => x.TaskId == id).ToArray();
+
+    /// <summary>
+    /// Builds the long-running state from actual evidence (CA-0/CA-4): the phase mirrors
+    /// the lifecycle status; the progress percent is DERIVED from the journal outcomes —
+    /// 100 ONLY when the lifecycle reports Completed, 0 when no outcomes observed
+    /// (§50 no fake progress); the confidence is a deterministic placeholder heuristic
+    /// (refined by the future TaskSupervisor CA-2).
+    /// </summary>
+    private static LongRunningState BuildLongRunningState(TolikTask? task, TaskScope? scope, IReadOnlyList<TaskJournalEntry> entries)
+    {
+        var phase = task?.Status.ToString() ?? "Unknown";
+        var last = entries.Count > 0 ? entries[^1] : null;
+        var completedSteps = entries.Count(e => !string.IsNullOrWhiteSpace(e.Result));
+        var failedAttempts = entries.Count(e => e.Event.Contains("fail", StringComparison.OrdinalIgnoreCase));
+        double percent = task?.Status == TolikTaskStatus.Completed ? 100.0
+            : entries.Count == 0 ? 0.0
+            : Math.Round(completedSteps * 100.0 / entries.Count, 1);
+        var progress = new TaskProgressSnapshot(
+            percent, phase, completedSteps, last?.NextStep, failedAttempts,
+            entries.LastOrDefault(e => !string.IsNullOrWhiteSpace(e.Result))?.Event,
+            CurrentHypothesis: null,
+            Confidence: task?.Status == TolikTaskStatus.Completed ? 0.9 : 0.5);
+        return new LongRunningState(phase, scope, last, progress);
+    }
     /// <summary>Optional realtime subscriber (WebSocket hub). Never throws on unsubscribe races.</summary>
     public event Action<TaskLifecycleEvent>? EventPublished;
     private bool Transition(Guid id, TolikTaskStatus from, TolikTaskStatus to) => tasks.TryGetValue(id, out var current) && current.Status == from && tasks.TryUpdate(id, current with { Status = to, CompletedAt = DateTimeOffset.UtcNow }, current);
