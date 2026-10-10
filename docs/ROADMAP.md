@@ -65,16 +65,26 @@ energy motes), **процедурный idle с ограниченной сто�
 цикла), 7 режимов присутствия (typed policy table; Hidden=5fps frozen; Gaming/
 Presentation force click-through), FrameGovernor (FPS cap + EWMA adaptive
 quality, degrade fast/recover slow), honest debug («core: local, no Core
-connection» — НИКОГДА фейковое состояние). **576/576 тестов** (539 foundation +
-37 desktop). Инварианты: renderer чист (нет identity/permissions/network —
-проверено); красный ТОЛЬКО из Error/Locked (реальные события, Phase 2/3).
-**CE-2 core (commit 0841765):** ExpressionState typed + ExpressionOutput +
-ExpressionComposer — детерминированная чистая функция (state, prev, dt) →
-output: приоритет locked>critical>voice>task>emotion>idle, параметры
-НАКАПЛИВАЮТСЯ (одно смешанное выражение), спектр low→оболочка/mid→глаз/
-high→частицы, переходы экспоненциальные, без LLM/NaN + 12 тестов. Остаток
-CE-2: State Watcher + WS-broadcast (ONE COMPOSER MANY RENDERERS — десктоп +
-Android потребляют один провод), CE-3 voice-reactive (реальный TTS stream),
+connection» — НИКОГДА фейковое состояние). Инварианты: renderer чист (нет
+identity/permissions/network — проверено); красный ТОЛЬКО из Error/Locked (реальные события, Phase 2/3).
+**CE-2 ПОЛНОСТЬЮ DONE (Core: commit 4def5df; Desktop client: commit eeb9592,
+685/685 тестов, live-verified end-to-end):** Core — CephalonExpressionService
+(5 Hz, per-user: реальные источники — задачи/locked/voice-in-flight/присутствие;
+mind — post-Genesis честные нули; publish gating delta>0.01/mode/1s heartbeat)
++ РЕАЛЬНЫЙ БАГФИКС: Program.cs создавал второй RealtimeEventHub — DI-издатели
+(ProactiveReminder) вещали в мёртвый hub; исправлено. **Wire-контракт live-
+verified** (WS smoke test): {"kind":"cephalon_expression","expression":{16
+camelCase полей + mode}}. Desktop — Bridge/ (WS-клиент: token через GET
+/auth/local-token, in-memory, URL-encoded; reconnect capped 30s; **401-fresh =
+terminal ноль ретраев**), ExpressionBridge (все 7 мод → states, каждое поле на
+свою ось; asymmetry честно НЕ замаплена — нет оси, никогда не фейкается),
+ExpressionLinkPresenter (honesty: no-core / connected-awaiting / AUTH REJECTED
+отличимо / **stale >15s → local idle, никогда замершая поза**), animator
+eased-targets (~5 Hz события = TARGETS, никогда snap) + SpectrumIntensity
+(честный ноль до CE-3) + ambient wobble (композер делегирует стохастику
+renderer'у — §7). +78 desktop тестов (wire/маппинг/reconnect/encoding/token-
+redaction). Остаток: **CE-3** (реальный TTS спектр: amplitude/bands честно
+нулевые пока voice-service не отдаст телеметрию), CE-4 (desktop awareness),
 **Блокер снят:** прежний stall designer-линии (04.10, три подряд, ноль записей)
 не повторился — свежая сессия работает.
 
