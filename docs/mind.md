@@ -390,12 +390,19 @@ Low; Authorization: Allowed; Selected: Benchmark TTS) — НЕ chain-of-thought.
 ## 15. Фазы реализации + зависимости
 
 ```text
-MI-0 MindState core (подсистемы, persistence, versioned)      [независимо]
-MI-1 MindEvent bus + event-driven loop (детерминированный)     [MI-0]
-MI-2 Boredom/Curiosity/Novelty (механизмы, TOLIK_MIND_*)       [MI-1]
-MI-3 DriveSystem + Motivation + Activity selection + REST      [MI-2]
-     уровни + Energy/budgets (M8/SE-0 интеграция)
-MI-4 Goals (types + generation: deterministic first) +          [MI-3]
+MI-0 MindState core (подсистемы, persistence, versioned) — DONE 10.10.2026
+    (commit 822d96e, +17 тестов: MindState — подсистемы continuous [0..1] +
+    ActivityLevel (fail-closed → REST) + attention/uncertainty + versioned
+    MindSnapshot; Adjust deterministic)
+MI-1 MindEvent bus + event-driven loop — DONE 10.10.2026 (commit 822d96e:
+    MindEvent/MindEventKind + MindEventBus (bounded 256, non-blocking) —
+    внутренняя шина, отделена от RealtimeEventHub; LLM только когда нужно)
+MI-2 Boredom/Curiosity/Novelty — DONE 10.10.2026 (commit 822d96e:
+    BoredomModel — continuous из измеримых условий, TOLIK_MIND_* конфиг,
+    НЕ таймер; NoveltyTracker (repeat ↓, unexpected ↑↑↑); CuriosityModel
+    (триггеры ↑, satisfied ↓, bounded))
+MI-3 DriveSystem + Motivation + Activity selection + REST
+MI-4 Goals (types + generation: deterministic first) +
      Attention + Uncertainty + Reflection (bounded)
 MI-5 Emotion из переходов + Mood + momentum + VoiceEmotion      [MI-1, VI-6]
      wiring + Personality/Temperament integration
