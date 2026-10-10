@@ -93,7 +93,18 @@ builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.ConfirmationStore>();
-builder.Services.AddSingleton<RealtimeEventHub>();
+// CE-2 (Cephalon expression wiring): ONE hub instance, created before Build so the DI
+// singleton is the SAME object the /events/ws endpoint registers clients on and the
+// TaskLifecycle subscription publishes to. Previously a second instance was created
+// after Build, so DI-resolved publishers (proactive reminders, the expression service)
+// broadcast into a hub no client ever joined. Clients, task events and publishers now
+// share the live instance — the Register/PublishToUser behavior is unchanged.
+var realtime = new RealtimeEventHub();
+builder.Services.AddSingleton<RealtimeEventHub>(realtime);
+// Cephalon Expression State Watcher (docs/cephalon-desktop.md CE-2): per-user real
+// state → the pure ExpressionComposer → WebSocket broadcast. Read-only observation:
+// it never authorizes anything (SECURITY & TRUST MODEL §1).
+builder.Services.AddHostedService<CephalonExpressionService>();
 builder.Services.Configure<OllamaOptions>(
     builder.Configuration.GetSection("TOLIK_MODEL_OFFLINE"));
 builder.Services.AddHttpClient<OllamaProvider>(
@@ -136,7 +147,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 var app = builder.Build();
 if (app.Configuration.GetValue<bool>("TOLIK_DEV_AUTO_TOKEN", false))
     app.Logger.LogWarning("TOLIK_DEV_AUTO_TOKEN is ON: same-machine UI may mint owner sessions. Never enable on shared/VPS hosts.");
-var realtime = new RealtimeEventHub();
+// (realtime hub is created before Build above — one shared instance everywhere)
 var soundboardLimiter = new SoundboardRateLimiter();
 
 // Apply pending EF migrations on startup (В§30: never alter schema without a migration).

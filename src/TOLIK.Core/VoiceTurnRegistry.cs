@@ -40,4 +40,11 @@ public sealed class VoiceTurnRegistry
 
     /// <summary>Marks the turn finished (removes without cancelling).</summary>
     public void Complete(Guid userId) => _turns.TryRemove(userId, out _);
+
+    /// <summary>
+    /// CE-2 (Cephalon expression wiring) read-only probe: is a voice turn currently in
+    /// flight for this user — the honest coarse isSpeaking source. Additive; the
+    /// registry's own lifecycle API is untouched.
+    /// </summary>
+    public bool HasInFlightTurn(Guid userId) => _turns.ContainsKey(userId);
 }

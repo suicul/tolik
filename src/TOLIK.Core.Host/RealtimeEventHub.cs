@@ -62,6 +62,22 @@ public sealed class RealtimeEventHub : IDisposable
 
     public int ConnectedClients => _clients.Count;
 
+    /// <summary>
+    /// CE-2 (Cephalon expression wiring): distinct user IDs that currently have at
+    /// least one live connection — the per-user composition routing source. Read-only
+    /// snapshot; additive, the existing API is untouched.
+    /// </summary>
+    public IReadOnlyList<Guid> ConnectedUserIds
+    {
+        get
+        {
+            var users = new HashSet<Guid>();
+            foreach (var entry in _clients)
+                users.Add(entry.Value.UserId);
+            return [.. users];
+        }
+    }
+
     public void Dispose()
     {
         foreach (var entry in _clients.Values)
