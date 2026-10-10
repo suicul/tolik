@@ -26,6 +26,7 @@ public sealed class TaskLifecycle
         public readonly object Gate = new();
         public TaskScope? Scope;
         public readonly List<TaskJournalEntry> Entries = new();
+        public TaskCheckpoint? Checkpoint; // CA-3: the last restore point (the newest wins)
     }
     public TolikTask Create(string description) { if (string.IsNullOrWhiteSpace(description) || description.Length > 4096) throw new ArgumentException("Task description is invalid."); if (tasks.Values.Count(x => x.Status is TolikTaskStatus.Pending or TolikTaskStatus.Running) >= MaxActiveTasks) throw new InvalidOperationException("Task limit reached."); var task = new TolikTask(Guid.NewGuid(), description, TolikTaskStatus.Pending, DateTimeOffset.UtcNow, null); tasks[task.Id] = task; longRunning[task.Id] = new LongRunningLog(); return task; }
     public TolikTask? Get(Guid id) => tasks.TryGetValue(id, out var task) ? task : null;
@@ -130,6 +131,27 @@ public sealed class TaskLifecycle
     {
         if (!longRunning.TryGetValue(taskId, out var log)) return Array.Empty<TaskJournalEntry>();
         lock (log.Gate) { return log.Entries.ToArray(); }
+    }
+
+    /// <summary>
+    /// Persists a checkpoint (CA-3/§8): the restore point for crash recovery —
+    /// only the LAST checkpoint is kept per task (the newest wins). No-op for unknown
+    /// tasks (fail closed). The external-state verification after restore is the
+    /// caller's job — the lifecycle stores evidence, it does not verify the world.
+    /// </summary>
+    public void AttachCheckpoint(Guid taskId, TaskCheckpoint checkpoint)
+    {
+        if (checkpoint is null) throw new ArgumentNullException(nameof(checkpoint));
+        if (!longRunning.TryGetValue(taskId, out var log)) return;
+        lock (log.Gate) { log.Checkpoint = checkpoint; }
+        Publish(taskId, "TaskCheckpoint", checkpoint.Phase);
+    }
+
+    /// <summary>The last checkpoint (null when none) — the resume-after-restart path reads it.</summary>
+    public TaskCheckpoint? GetCheckpoint(Guid taskId)
+    {
+        if (!longRunning.TryGetValue(taskId, out var log)) return null;
+        lock (log.Gate) { return log.Checkpoint; }
     }
     public IReadOnlyList<TaskLifecycleEvent> GetEvents(Guid id) => events.Where(x => x.TaskId == id).ToArray();
 

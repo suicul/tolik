@@ -1259,6 +1259,36 @@ app.MapPost("/tasks/{taskId:guid}/revoke-lease", async (Guid taskId, HttpContext
         revoked ? "lease_revoked" : "no_lease", principal, null, null, taskId.ToString("D"), "revoked", cancellationToken);
     return Results.Ok(new { revoked });
 });
+app.MapPost("/tasks/{taskId:guid}/checkpoint", async (Guid taskId, TaskCheckpointRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, DurableMemoryStore durableMemory, AuditWriter audit, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    // CA-3 (docs/continuous-autonomy.md §8): the persisted restore point for crash
+    // recovery — crash → restore → verify external state → resume safely. Evidence
+    // and rollback state only; НИКОГДА «started = succeeded» (§50 no fake).
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
+    if (string.IsNullOrWhiteSpace(request?.Phase))
+        return Results.BadRequest(new { error = "invalid_checkpoint" });
+    var checkpoint = new TOLIK.Infrastructure.Tasks.TaskCheckpoint(
+        DateTimeOffset.UtcNow, request.Phase.Trim(), request.OverallPercent ?? 0,
+        request.ActiveBranch, request.ModifiedResources ?? [], request.LastCompletedAction,
+        request.CurrentAction, request.NextAction, request.RollbackState, request.Evidence);
+    lifecycle.AttachCheckpoint(taskId, checkpoint);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private,
+        $"task.checkpoint: {checkpoint.Phase} ({checkpoint.OverallPercent:0}%)", "task.checkpoint", 0.7, cancellationToken);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "task.checkpoint", "ALLOW", $"task:{taskId:D}", cancellationToken);
+    return Results.Ok(new { checkpointed = true, phase = checkpoint.Phase, percent = checkpoint.OverallPercent });
+});
+app.MapGet("/tasks/{taskId:guid}/checkpoint", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    if (!await db.Tasks.AnyAsync(x => x.Id == taskId && x.UserId == principal.UserId, cancellationToken)) return Results.NotFound();
+    var checkpoint = lifecycle.GetCheckpoint(taskId);
+    return checkpoint is null ? Results.NotFound(new { error = "no_checkpoint" }) : Results.Ok(checkpoint);
+});
 app.MapPost("/tasks/{taskId:guid}/plan", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
@@ -3407,6 +3437,13 @@ public sealed record TaskRequest(string? Description, string? Project = null, st
 /// <summary>CA-4/§9: one structured task-journal entry request. Safe summaries only —
 /// no transcripts, no secrets (the journal feeds natural conversation later).</summary>
 public sealed record TaskJournalRequest(string? Event, string? Action = null, string? Result = null, string? Reason = null, string? NextStep = null);
+
+/// <summary>CA-3/§8: a checkpoint request — evidence and rollback state only
+/// (НИКОГДА «started = succeeded»); safe summaries, no transcripts/secrets.</summary>
+public sealed record TaskCheckpointRequest(
+    string? Phase, double? OverallPercent = null, string? ActiveBranch = null,
+    IReadOnlyList<string>? ModifiedResources = null, string? LastCompletedAction = null,
+    string? CurrentAction = null, string? NextAction = null, string? RollbackState = null, string? Evidence = null);
 public sealed record AgentHeartbeatRequest(Guid AgentId);
 
 /// <summary>Control-flow for a failed plan step: stop without cascading, report partial results.</summary>

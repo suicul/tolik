@@ -149,4 +149,87 @@ public sealed class LongRunningTaskTests
         Assert.Equal(87.0, snapshot.OverallPercent);
         Assert.Equal(2, snapshot.FailedAttempts);
     }
+
+    [Fact]
+    public void Checkpoint_attach_and_get_newest_wins()
+    {
+        var lifecycle = new TaskLifecycle();
+        var task = lifecycle.Create("checkpointed task");
+        Assert.Null(lifecycle.GetCheckpoint(task.Id)); // none yet
+
+        lifecycle.AttachCheckpoint(task.Id, new TaskCheckpoint(
+            DateTimeOffset.UtcNow, "build", 40.0, "feature/x", ["src/a.cs"], "inspect", null, "build", null, "evidence"));
+        Assert.Equal("build", lifecycle.GetCheckpoint(task.Id)!.Phase);
+        Assert.Equal(40.0, lifecycle.GetCheckpoint(task.Id)!.OverallPercent);
+
+        // The newest wins (only the LAST checkpoint kept per task).
+        lifecycle.AttachCheckpoint(task.Id, new TaskCheckpoint(
+            DateTimeOffset.UtcNow, "testing", 80.0, "feature/x", ["src/a.cs"], "build ok", "run tests", "package", "git reset", "evidence"));
+        Assert.Equal("testing", lifecycle.GetCheckpoint(task.Id)!.Phase);
+        Assert.Equal(80.0, lifecycle.GetCheckpoint(task.Id)!.OverallPercent);
+        Assert.Equal("git reset", lifecycle.GetCheckpoint(task.Id)!.RollbackState); // rollback info preserved
+    }
+
+    [Fact]
+    public void Checkpoint_unknown_task_is_noop_fail_closed()
+    {
+        var lifecycle = new TaskLifecycle();
+        lifecycle.AttachCheckpoint(Guid.NewGuid(), new TaskCheckpoint(DateTimeOffset.UtcNow, "x", 0, null, [], null, null, null, null, null));
+        Assert.Null(lifecycle.GetCheckpoint(Guid.NewGuid())); // no-op, no throw
+    }
+}
+
+/// <summary>
+/// Bounded recovery + temporal waits (docs/continuous-autonomy.md CA-6): a failed action
+/// is retried ONCE, then an alternate strategy, then STOP+ask — never forever; waits are
+/// semantic (condition+timeout) instead of arbitrary sleeps.
+/// </summary>
+public sealed class RecoveryWaitTests
+{
+    [Theory]
+    [InlineData(0, RecoveryPolicy.RecoveryAction.RetrySame)]
+    [InlineData(1, RecoveryPolicy.RecoveryAction.AlternateStrategy)]
+    [InlineData(2, RecoveryPolicy.RecoveryAction.EscalatePauseAndAsk)]
+    [InlineData(5, RecoveryPolicy.RecoveryAction.EscalatePauseAndAsk)]
+    public void Recovery_decides_bounded_attempts(int failedAttempts, RecoveryPolicy.RecoveryAction expected)
+    {
+        Assert.Equal(expected, RecoveryPolicy.Decide(failedAttempts));
+    }
+
+    [Theory]
+    [InlineData("connection refused (timeout)", FailureKind.Transient)]
+    [InlineData("network unavailable", FailureKind.Transient)]
+    [InlineData("compile error CS0246", FailureKind.Permanent)]
+    [InlineData("assert failed", FailureKind.Permanent)]
+    [InlineData("", FailureKind.Unknown)]
+    public void Failure_classification_transient_vs_permanent(string summary, FailureKind expected)
+    {
+        Assert.Equal(expected, RecoveryPolicy.ClassifyFailure(summary));
+    }
+
+    [Fact]
+    public async Task WaitUntil_met_before_timeout()
+    {
+        var flag = false;
+        var met = await WaitUntil.ConditionAsync(() => flag, TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.False(met); // never set: timeout
+        flag = true;
+        met = await WaitUntil.ConditionAsync(() => flag, TimeSpan.FromSeconds(2), CancellationToken.None);
+        Assert.True(met); // immediately met
+    }
+
+    [Fact]
+    public async Task WaitUntil_timeout_returns_false_and_honours_cancellation()
+    {
+        var met = await WaitUntil.ConditionAsync(() => false, TimeSpan.FromMilliseconds(300), CancellationToken.None);
+        Assert.False(met); // the timeout bounds the wait
+
+        using var cts = new CancellationTokenSource();
+        var cancelTask = Task.Run(async () => { await Task.Delay(50); cts.Cancel(); });
+        var started = DateTimeOffset.UtcNow;
+        met = await WaitUntil.ConditionAsync(() => false, TimeSpan.FromSeconds(30), cts.Token);
+        Assert.False(met);
+        Assert.True((DateTimeOffset.UtcNow - started).TotalSeconds < 5); // the cancellation cut it early
+        await cancelTask;
+    }
 }

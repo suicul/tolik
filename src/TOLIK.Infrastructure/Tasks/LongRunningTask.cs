@@ -38,6 +38,24 @@ public sealed record TaskJournalEntry(DateTimeOffset Timestamp, string Event, st
 public sealed record TaskProgressSnapshot(double OverallPercent, string Phase, int CompletedSteps, string? CurrentStep, int FailedAttempts, string? LastSuccessfulAction, string? CurrentHypothesis, double Confidence);
 
 /// <summary>
+/// Task checkpoint (CA-3/§8, docs/continuous-autonomy.md): the persisted restore point
+/// for a long-running task — crash → restore → verify external state → resume safely.
+/// НИКОГДА «action started = action succeeded»: the checkpoint carries the evidence and
+/// the rollback state; safe summaries only (no transcripts/secrets).
+/// </summary>
+public sealed record TaskCheckpoint(
+    DateTimeOffset Timestamp,
+    string Phase,
+    double OverallPercent,
+    string? ActiveBranch,
+    IReadOnlyList<string> ModifiedResources,
+    string? LastCompletedAction,
+    string? CurrentAction,
+    string? NextAction,
+    string? RollbackState,
+    string? Evidence);
+
+/// <summary>
 /// Deterministic task-journal renderer (CA-4/§9): user-facing summaries in the plan's own
 /// format — «14:21 — build failed … 14:44 — tests passed». Each line is rendered in the
 /// entry's own UTC offset (no machine-timezone conversion — deterministic), chronologically
