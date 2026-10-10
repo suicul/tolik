@@ -35,7 +35,9 @@ public enum AgentCapability
     CancelTask,
     RunCodex,
     RunOpenCode,
-    PlaySound
+    PlaySound,
+    /// <summary>Captures the screen (CU-1 foundation) — reads, never modifies; privacy-sensitive (§50).</summary>
+    CaptureScreen
 }
 
 public enum ToolRiskLevel
