@@ -307,9 +307,18 @@ Companion/Fullscreen/Conversation/Voice/Compact; сеть — конфигури
 никогда зашитый IP; offline — outbox + последний подтверждённый статус со
 временем). Фазы AN-P1..P7 (Foundation/Cephalon Mobile/Conversation/Voice/Camera/
 Tasks/Presence); AN-P5/AN-P7 — post-Genesis; скрытая запись/съёмка и обход
-индикаторов Android ЗАПРЕЩЕНЫ. Android SDK на машине НЕТ → код compile-pending
-(валидация при установке SDK владельцем). Токен агента — через
-TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
+индикаторов Android ЗАПРЕЩЕНЫ. **AN-P1 Foundation DONE (commit 1361798, 33
+файла):** Gradle-проект (AGP 8.5.2/Kotlin 2.0.20, minSdk 26), transport (401/403 →
+failure, никогда локальная авторизация; WS+backoff; SSE Content-Type detect),
+VoiceClient РЕАЛИЗОВАН (WavWriter/VAD gate/UtteranceSegmenter — порт
+Contracts/UtteranceSegmenter.cs/mic engine/TTS player; turn-level echo gate +400ms
+tail — 0.10 семантика; barge-in M5; speaker tier — HINT ONLY), tasks/
+confirmations/WS мониторинг + notifications, DeviceIdentity (AndroidKeyStore EC
+P-256 non-exportable). **COMPILE-PENDING:** Android SDK на машине НЕТ → НЕ
+собран/не запущен; валидация при установке SDK владельцем (gradle wrapper +
+assembleDebug; README документирует). Контракт-отклонения найдены и задокументированы
+(README): /chat → 'answer', /voice/turn-stream JSON-или-SSE, MFA 403 surfaced.
+Токен агента — через TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
 
 ## Pre-Genesis audit (oracle, 10.10.2026) — PASS, M1-M4 закрыты
 Верdict: все 9 security-инвариантов держат (trust ≠ authorization; никогда
