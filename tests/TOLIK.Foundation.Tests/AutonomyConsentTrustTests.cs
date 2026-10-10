@@ -16,8 +16,42 @@ public sealed class AutonomyLevelTests
     [Fact]
     public void Default_level_is_supervised_autonomous()
     {
-        // TOLIK_AUTONOMY_LEVEL unset in test env → default L2 (docs §1).
-        Assert.Equal(AutonomyLevel.SupervisedAutonomous, AutonomyLevelPolicy.Configured);
+        // Pinned (not machine-dependent): TOLIK_AUTONOMY_LEVEL unset → default L2 (docs §1).
+        var old = Environment.GetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL");
+        try
+        {
+            Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", null);
+            Assert.Equal(AutonomyLevel.SupervisedAutonomous, AutonomyLevelPolicy.Configured);
+        }
+        finally { Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", old); }
+    }
+
+    [Fact]
+    public void Invalid_config_fails_closed_to_reactive()
+    {
+        // M1 (audit): Enum.TryParse accepts out-of-range numerics ("99") — an invalid
+        // value must fall to the MOST RESTRICTIVE level, never the permissive default.
+        var old = Environment.GetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL");
+        try
+        {
+            Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", "99");
+            Assert.Equal(AutonomyLevel.Reactive, AutonomyLevelPolicy.Configured);
+            Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", "nonsense");
+            Assert.Equal(AutonomyLevel.Reactive, AutonomyLevelPolicy.Configured);
+        }
+        finally { Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", old); }
+    }
+
+    [Fact]
+    public void Valid_config_parses_by_name()
+    {
+        var old = Environment.GetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL");
+        try
+        {
+            Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", "BoundedAutonomous");
+            Assert.Equal(AutonomyLevel.BoundedAutonomous, AutonomyLevelPolicy.Configured);
+        }
+        finally { Environment.SetEnvironmentVariable("TOLIK_AUTONOMY_LEVEL", old); }
     }
 
     [Fact]
@@ -60,34 +94,104 @@ public sealed class AutonomyLevelTests
 
 public sealed class ConsentModelTests
 {
+    private const string Ivan = "owner-ivan";
+    private const string Maria = "family-maria";
+
     [Fact]
     public void Grant_is_target_bound()
     {
-        ConsentModel.Grant("fix_service", "voice-service", ConsentScopeKind.TaskScoped);
-        Assert.NotNull(ConsentModel.FindActive("fix_service", "voice-service"));
+        ConsentModel.Grant("fix_service", "voice-service", ConsentScopeKind.TaskScoped, Ivan);
+        Assert.NotNull(ConsentModel.FindActive("fix_service", "voice-service", Ivan));
         // «почини голосовой сервис» ≠ «modify anything» (§4/§15).
-        Assert.Null(ConsentModel.FindActive("fix_service", "database"));
+        Assert.Null(ConsentModel.FindActive("fix_service", "database", Ivan));
         ConsentModel.RevokeAll("fix_service");
     }
 
     [Fact]
-    public void Expired_grant_is_not_active()
+    public void Grant_is_identity_bound()
     {
-        ConsentModel.Grant("test_action", "target-a", ConsentScopeKind.OneTime, duration: TimeSpan.FromMinutes(5));
+        // M2 (audit): consent is identity-bound — a household member never consumes
+        // another's grant (multi-person memory, §18/§19).
+        ConsentModel.Grant("fix_service", "voice-service", ConsentScopeKind.TaskScoped, Ivan);
+        Assert.NotNull(ConsentModel.FindActive("fix_service", "voice-service", Ivan));
+        Assert.Null(ConsentModel.FindActive("fix_service", "voice-service", Maria));
+        ConsentModel.RevokeAll("fix_service");
+    }
+
+    [Fact]
+    public void GrantedBy_is_required()
+    {
+        // M2 (audit): a grant without a principal fails closed — no anonymous consent.
+        Assert.Throws<ArgumentException>(() =>
+            ConsentModel.Grant("fix_service", "voice-service", ConsentScopeKind.TaskScoped, ""));
+        Assert.Throws<ArgumentException>(() =>
+            ConsentModel.FindActive("fix_service", "voice-service", ""));
+    }
+
+    [Fact]
+    public void Expired_grant_is_not_active_and_is_swept()
+    {
+        ConsentModel.Grant("test_action", "target-a", ConsentScopeKind.OneTime, Ivan, duration: TimeSpan.FromMinutes(5));
         var now = DateTimeOffset.UtcNow;
-        Assert.NotNull(ConsentModel.FindActive("test_action", "target-a", now));
-        Assert.Null(ConsentModel.FindActive("test_action", "target-a", now + TimeSpan.FromMinutes(6)));
+        Assert.NotNull(ConsentModel.FindActive("test_action", "target-a", Ivan, now));
+        Assert.Null(ConsentModel.FindActive("test_action", "target-a", Ivan, now + TimeSpan.FromMinutes(6)));
         ConsentModel.RevokeAll("test_action");
+    }
+
+    [Fact]
+    public void OneTime_grant_is_consumed_after_use()
+    {
+        // M3 (audit): "OneTime — consumed after use" is enforced, not just a comment.
+        ConsentModel.Grant("screenshot_once", "desktop", ConsentScopeKind.OneTime, Ivan);
+        Assert.NotNull(ConsentModel.FindActive("screenshot_once", "desktop", Ivan));
+        Assert.True(ConsentModel.Consume("screenshot_once", "desktop", Ivan));
+        Assert.Null(ConsentModel.FindActive("screenshot_once", "desktop", Ivan));
+        Assert.False(ConsentModel.Consume("screenshot_once", "desktop", Ivan)); // nothing to consume
+    }
+
+    [Fact]
+    public void TaskScoped_grant_is_not_consumable()
+    {
+        // Consume() is for OneTime only — task/session grants live until revoked/bounded.
+        ConsentModel.Grant("maintain_service", "voice-service", ConsentScopeKind.TaskScoped, Ivan);
+        Assert.False(ConsentModel.Consume("maintain_service", "voice-service", Ivan));
+        Assert.NotNull(ConsentModel.FindActive("maintain_service", "voice-service", Ivan));
+        ConsentModel.RevokeAll("maintain_service");
+    }
+
+    [Fact]
+    public void Session_scoped_requires_bound_session_and_revokes_on_session_end()
+    {
+        // M3 (audit): "until the session ends" must be enforceable — a SessionScoped
+        // grant without a session id fails closed; the session-end flow revokes it.
+        Assert.Throws<ArgumentException>(() =>
+            ConsentModel.Grant("manage_app", "app", ConsentScopeKind.SessionScoped, Ivan));
+        ConsentModel.Grant("manage_app", "app", ConsentScopeKind.SessionScoped, Ivan, boundSessionId: "ses_123");
+        Assert.NotNull(ConsentModel.FindActive("manage_app", "app", Ivan));
+        Assert.True(ConsentModel.RevokeSession("ses_123"));
+        Assert.Null(ConsentModel.FindActive("manage_app", "app", Ivan));
+    }
+
+    [Fact]
+    public void Active_grant_list_is_bounded()
+    {
+        // M3 (audit): the list is capped (drop-oldest) — long-lived cores never grow unbounded.
+        for (var i = 0; i < 300; i++)
+            ConsentModel.Grant("bulk_action", $"t{i}", ConsentScopeKind.OneTime, Ivan);
+        // The oldest 44 dropped; the newest 256 remain active.
+        Assert.Null(ConsentModel.FindActive("bulk_action", "t0", Ivan));
+        Assert.NotNull(ConsentModel.FindActive("bulk_action", "t299", Ivan));
+        ConsentModel.RevokeAll("bulk_action");
     }
 
     [Fact]
     public void Revoke_all_stops_every_grant_for_action()
     {
-        ConsentModel.Grant("cleanup", "t1", ConsentScopeKind.SessionScoped);
-        ConsentModel.Grant("cleanup", "t2", ConsentScopeKind.SessionScoped);
+        ConsentModel.Grant("cleanup", "t1", ConsentScopeKind.SessionScoped, Ivan, boundSessionId: "ses_x1");
+        ConsentModel.Grant("cleanup", "t2", ConsentScopeKind.SessionScoped, Ivan, boundSessionId: "ses_x2");
         Assert.True(ConsentModel.RevokeAll("cleanup"));
-        Assert.Null(ConsentModel.FindActive("cleanup", "t1"));
-        Assert.Null(ConsentModel.FindActive("cleanup", "t2"));
+        Assert.Null(ConsentModel.FindActive("cleanup", "t1", Ivan));
+        Assert.Null(ConsentModel.FindActive("cleanup", "t2", Ivan));
         Assert.False(ConsentModel.RevokeAll("cleanup")); // nothing left
     }
 

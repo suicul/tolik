@@ -9,7 +9,9 @@ namespace TOLIK.Infrastructure.Persistence;
 /// pattern): reproducible baselines with provenance (benchmark id, hardware/software
 /// env). Comparison + reject decisions happen in the deterministic BaselineComparer —
 /// the store only persists and retrieves. GetLatest gives the CI/benchmark gate the
-/// comparison target; nothing here is authorization-relevant.
+/// comparison target; nothing here is authorization-relevant. HardwareEnv/
+/// SoftwareEnv/TestResultsSummary are DESCRIPTORS ONLY — environment names and test
+/// summaries, never secrets, never prompts.
 /// </summary>
 public sealed class BaselineStore(IDbContextFactory<TolikDbContext> dbFactory)
 {
@@ -29,8 +31,12 @@ public sealed class BaselineStore(IDbContextFactory<TolikDbContext> dbFactory)
         if (string.IsNullOrWhiteSpace(hardwareEnv) || hardwareEnv.Length > 512) throw new ArgumentException("Hardware env is required.", nameof(hardwareEnv));
         if (string.IsNullOrWhiteSpace(softwareEnv) || softwareEnv.Length > 512) throw new ArgumentException("Software env is required.", nameof(softwareEnv));
         ArgumentNullException.ThrowIfNull(metrics);
-        foreach (var name in metrics.Keys)
+        foreach (var (name, value) in metrics)
+        {
             MetricCatalog.Find(name); // fail closed: only catalog metrics are stored
+            if (!double.IsFinite(value))
+                throw new ArgumentOutOfRangeException(nameof(metrics), $"Metric \"{name}\" value must be finite (never NaN/Infinity).");
+        }
 
         var entity = new BaselineEntity
         {

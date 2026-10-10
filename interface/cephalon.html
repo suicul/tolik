@@ -217,14 +217,11 @@
             agent: document.getElementById('agent-status'),
             memory: document.getElementById('memory-status'),
         };
-        const subtitleEl = document.getElementById('subtitle');
         const chatModal = document.getElementById('chat-modal');
         const chatInput = document.getElementById('chat-input');
         const chatMessages = document.getElementById('chat-messages');
         const btnMic = document.getElementById('btn-mic');
         const chatModalEl = document.getElementById('chat-modal');
-        const chatInput = document.getElementById('chat-input');
-        const chatMessages = document.getElementById('chat-messages');
 
         // --- Canvas Eye Animation ---
         let animationFrame = null;
@@ -515,7 +512,7 @@
                     headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                     body: JSON.stringify({ audio: Array.from(audioBytes), mode: 'Normal', runtimeMode: 'Normal' })
                 });
-                const data = await response.json();
+                const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || res.status);
                 return data;
             } catch (e) {
@@ -552,18 +549,6 @@
             div.textContent = (role==='user'?'You: ':'TOLIK: ') + text;
             chatMessages.appendChild(div);
             chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        async function api(path, options = {}) {
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) headers['Authorization'] = 'Bearer ' + token;
-            const res = await fetch(`${CORE_URL}${path}`, { ...options, headers });
-            if (!res.ok) throw new Error(await res.text());
-            return res.json();
-        }
-
-        async function apiPost(path, body) {
-            return api(path, { method: 'POST', body: JSON.stringify(body) });
         }
 
         // --- Memory ---

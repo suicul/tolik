@@ -38,11 +38,12 @@ public static class MindEventKind
 }
 
 /// <summary>
-/// In-process mind event fan-out: the subscribers (the mind-state updaters, the goal
-/// generator, the boredom/clocks) receive events in order. Bounded queue (drop-oldest
-/// under pressure — a lost mind event costs nothing); the publishing NEVER blocks.
-/// The deterministic handlers do the state updates; the LLM reasoning happens only
-/// when a handler explicitly needs it (never in the loop).
+/// In-process mind event channel (docs/mind.md §6, MI-1): bounded (drop-oldest under
+/// pressure — a lost mind event costs nothing), publishing NEVER blocks. SINGLE-CONSUMER
+/// semantics: multiple readers compete (each event goes to exactly one); multicast
+/// fan-out to several subscribers is a post-Genesis wiring decision (MI-1 consumers
+/// land then) — do not assume fan-out. The deterministic handlers do the state updates;
+/// the LLM reasoning happens only when a handler explicitly needs it (never in the loop).
 /// </summary>
 public sealed class MindEventBus
 {

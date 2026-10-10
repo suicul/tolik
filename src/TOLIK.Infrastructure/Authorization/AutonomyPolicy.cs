@@ -47,14 +47,15 @@ public static class AutonomyPolicy
         // Authorization outranks autonomy — a policy Deny is final.
         if (ctx.PolicyDecision == AuthorizationDecision.Deny) return AutonomyDecision.Deny;
         var descriptor = CapabilityRegistry.Find(ctx.Capability);
+        // Unregistered capability — fail closed BEFORE any allow path (defense-in-depth:
+        // a pre-authorized rule naming an unregistered capability must never yield Autonomous).
+        if (descriptor is null) return AutonomyDecision.Deny;
         // Policy already demanded a confirmation: Critical descriptors additionally require MFA (§2, §9).
         if (ctx.PolicyDecision == AuthorizationDecision.ConfirmationRequired)
             return descriptor is { RequiresMfa: true } ? AutonomyDecision.MfaConfirm : AutonomyDecision.Confirm;
         // The owner's explicit structured rule (capability+target, provenance + scope; §2) —
         // never a blanket rule, which the rule format makes impossible.
         if (ctx.PreAuthorizedRuleMatches) return AutonomyDecision.Autonomous;
-        // Unregistered capability — fail closed.
-        if (descriptor is null) return AutonomyDecision.Deny;
         var raw = descriptor.DeclaredRisk switch
         {
             ToolRiskLevel.ReadOnly => AutonomyDecision.Autonomous,

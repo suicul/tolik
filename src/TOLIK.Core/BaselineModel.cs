@@ -54,6 +54,9 @@ public sealed record ComparisonResult(
 /// </summary>
 public static class BaselineComparer
 {
+    /// <summary>Default tolerance (±10%) for metrics without an explicit threshold.</summary>
+    public const double DefaultTolerance = 0.10;
+
     public static ComparisonResult Compare(
         BaselineRecord baseline,
         BaselineRecord candidate,
@@ -61,7 +64,7 @@ public static class BaselineComparer
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(candidate);
-        var tolerances = (thresholds ?? DefaultThresholds)
+        var tolerances = (thresholds ?? [])
             .ToDictionary(t => t.MetricName, t => t.MaxRegressionFraction, StringComparer.OrdinalIgnoreCase);
 
         var comparisons = new List<MetricComparison>();
@@ -74,12 +77,22 @@ public static class BaselineComparer
                 reasons.Add($"metric \"{metricName}\" missing in candidate — fail closed");
                 continue;
             }
-            var definition = MetricCatalog.Exists(metricName) ? MetricCatalog.Find(metricName) : null;
-            var lowerIsBetter = definition?.LowerIsBetter ?? true; // latency-style by default
+            // Fail closed on non-finite values: a corrupted benchmark run is REJECTED,
+            // never silently accepted (NaN > tolerance is false — the old hole).
+            if (!double.IsFinite(baselineValue) || !double.IsFinite(candidateValue))
+            {
+                comparisons.Add(new MetricComparison(metricName, baselineValue, candidateValue, double.NaN, Regression: true));
+                reasons.Add($"metric \"{metricName}\" has a non-finite value — fail closed");
+                continue;
+            }
+            // Fail closed on unknown metrics: only catalog metrics exist (the store
+            // enforces this) — a non-catalog name here is a programming error, and the
+            // comparison direction must never be guessed.
+            var definition = MetricCatalog.Find(metricName);
             var denominator = Math.Max(Math.Abs(baselineValue), 1e-9);
             var delta = (candidateValue - baselineValue) / denominator;
-            var tolerance = tolerances.GetValueOrDefault(metricName, DefaultThresholds[0].MaxRegressionFraction);
-            var regressed = lowerIsBetter
+            var tolerance = tolerances.TryGetValue(metricName, out var t) ? t : DefaultTolerance;
+            var regressed = definition.LowerIsBetter
                 ? delta > tolerance
                 : delta < -tolerance;
             comparisons.Add(new MetricComparison(metricName, baselineValue, candidateValue, delta, regressed));
@@ -89,10 +102,4 @@ public static class BaselineComparer
 
         return new ComparisonResult(reasons.Count == 0, comparisons, reasons);
     }
-
-    /// <summary>Default tolerance (±10%) for metrics without an explicit threshold.</summary>
-    public static readonly IReadOnlyList<MetricThreshold> DefaultThresholds =
-    [
-        new("*", 0.10)
-    ];
 }

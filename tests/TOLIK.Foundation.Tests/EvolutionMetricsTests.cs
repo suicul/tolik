@@ -134,6 +134,23 @@ public sealed class BaselineComparerTests
     }
 
     [Fact]
+    public void Non_finite_values_fail_closed()
+    {
+        // M4 (audit): a corrupted benchmark run (NaN/Infinity) is REJECTED, never
+        // silently accepted (NaN > tolerance is false — the old fail-open hole).
+        var nanBaseline = Record(1, new Dictionary<string, double> { ["voice_tts_ttfa_ms"] = double.NaN });
+        var candidate = Record(2, new Dictionary<string, double> { ["voice_tts_ttfa_ms"] = 100 });
+        var result = BaselineComparer.Compare(nanBaseline, candidate);
+        Assert.False(result.Accepted);
+        Assert.Contains(result.Reasons, r => r.Contains("non-finite"));
+        var infCandidate = Record(2, new Dictionary<string, double> { ["voice_tts_ttfa_ms"] = double.PositiveInfinity });
+        var finiteBaseline = Record(1, new Dictionary<string, double> { ["voice_tts_ttfa_ms"] = 100 });
+        var result2 = BaselineComparer.Compare(finiteBaseline, infCandidate);
+        Assert.False(result2.Accepted);
+        Assert.Contains(result2.Reasons, r => r.Contains("non-finite"));
+    }
+
+    [Fact]
     public void Zero_baseline_denominator_is_safe()
     {
         var baseline = Record(1, new Dictionary<string, double> { ["core_serialization_ms"] = 0 });

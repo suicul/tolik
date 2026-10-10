@@ -53,18 +53,24 @@ public static class ToolEscalation
             Reason: "a coding agent can modify the working tree without review of each edit"),
     ];
 
-    /// <summary>Returns the effective risk and the first matching rule (declared risk is the floor).</summary>
+    /// <summary>Returns the effective risk and the WINNING rule (declared risk is the floor).
+    /// Evaluates ALL matching rules and takes the maximum — overlapping rules never
+    /// under-escalate (e.g. .tolik hooks + security-critical source both hit → Critical wins).</summary>
     public static (ToolRiskLevel EffectiveRisk, EscalationRule? Applied) Evaluate(AgentCapability capability, string resource)
     {
         var effective = ToolRiskLevel.ReadOnly;
+        EscalationRule? winner = null;
         foreach (var rule in Rules)
         {
             if (rule.Capability != capability) continue;
             if (!rule.Pattern.IsMatch(resource)) continue;
-            if (rule.EscalatedRisk > effective) effective = rule.EscalatedRisk;
-            return (effective, rule);
+            if (rule.EscalatedRisk > effective)
+            {
+                effective = rule.EscalatedRisk;
+                winner = rule;
+            }
         }
-        return (effective, null);
+        return (effective, winner);
     }
 }
 

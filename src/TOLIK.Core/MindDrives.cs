@@ -12,15 +12,21 @@ namespace TOLIK.Core;
 public sealed class BoredomModel
 {
     // TOLIK_MIND_* configurable weights (defaults: equal contribution, calibrated later).
-    public double InactivityWeight { get; } = double.TryParse(
-        Environment.GetEnvironmentVariable("TOLIK_MIND_BOREDOM_INACTIVITY_WEIGHT"), out var w) ? w : 1.0;
-    public double IdlenessWeight { get; } = double.TryParse(
-        Environment.GetEnvironmentVariable("TOLIK_MIND_BOREDOM_IDLENESS_WEIGHT"), out var iw) ? iw : 1.0;
-    public double NoveltyDeficitWeight { get; } = double.TryParse(
-        Environment.GetEnvironmentVariable("TOLIK_MIND_BOREDOM_NOVELTY_WEIGHT"), out var nw) ? nw : 1.0;
+    // Fail-closed parsing (n4): non-numeric, non-finite or negative values fall back to
+    // the default — silent nonsense weighting does not exist.
+    public double InactivityWeight { get; } = ParseWeight("TOLIK_MIND_BOREDOM_INACTIVITY_WEIGHT", 1.0);
+    public double IdlenessWeight { get; } = ParseWeight("TOLIK_MIND_BOREDOM_IDLENESS_WEIGHT", 1.0);
+    public double NoveltyDeficitWeight { get; } = ParseWeight("TOLIK_MIND_BOREDOM_NOVELTY_WEIGHT", 1.0);
     /// <summary>Minutes without meaningful interaction at which the inactivity term saturates.</summary>
-    public double InactivitySaturationMinutes { get; } = double.TryParse(
-        Environment.GetEnvironmentVariable("TOLIK_MIND_BOREDOM_SATURATION_MIN"), out var sm) ? sm : 120.0;
+    public double InactivitySaturationMinutes { get; } = ParseWeight("TOLIK_MIND_BOREDOM_SATURATION_MIN", 120.0);
+
+    private static double ParseWeight(string variable, double fallback)
+    {
+        return double.TryParse(Environment.GetEnvironmentVariable(variable), out var value) &&
+               double.IsFinite(value) && value > 0.0
+            ? value
+            : fallback;
+    }
 
     /// <summary>
     /// Computes the continuous boredom level: the weighted sum of the normalized inputs —
