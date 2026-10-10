@@ -42,17 +42,33 @@ medium/en transcripts, review pending).
 Next: review.tsv curation → owner's CosyVoice fine-tune (owner's track);
 normalization dictionary (Цетус/Гринир seed list ready); game-mode mute.
 
-## Track 3 — Native Windows UI (WPF, approved) 🔲 not started — BLOCKED on provider
+## Track 3 — Native Windows UI (WPF, approved) 🔨 IN PROGRESS — Cephalon Desktop Embodiment (master directive 10.10.2026)
 Cephalon overlay: transparent always-on-top, idle/listening/thinking/speaking/
 working/denied states, direct mic (no browser), mic-always-on WITH indicator
 (approved), game mode silent. Web UI stays as fallback. Voice-ID enroll wizard exists in Web UI (3 phrases +
 verify); port it. Needs: wake-word (openWakeWord) integration,
 challenge-response for sensitive voice actions.
-**BLOCKER (04.10.2026):** три подряд stall'а designer-линии на этой задаче
-(две сессии, ноль файловых записей — провайдер системно убивает длинные поколения
-на этом окружении). Первый MVP-slice размечен (skeleton → overlay → state machine
-→ tray, mic — позже); попытка возобновления — после стабилизации провайдера
-(или интерактивный режим).
+**UNBLOCKED (10.10.2026):** новый master directive владельца — Cephalon Desktop
+Embodiment & Emergent Expression System. Мастер-план: **docs/cephalon-desktop.md**
+(границы подсистем; tech choice: WPF + CPU процедурный 2D — RTX 3060 остаётся
+свободной для игр, без новых NuGet-зависимостей; геометрия параметрическая →
+перенос в VR/3D). Фазы CE-1..7 (presence prototype → state-driven → voice-
+reactive → desktop awareness → DSL → learned → multi-device).
+**Реализовано (pre-Genesis):** CE-2 core (commit 0841765, 539/539 green):
+ExpressionState typed (cognitive/emotional subset/социальные/голосовые/
+системные — реальные источники, Normalized fail-closed) + ExpressionOutput
+(bounded ranges, ExpressionMode hint — цвет не единственный носитель эмоции) +
+ExpressionComposer — детерминированная ЧИСТАЯ функция (state, prev, dt) →
+output: приоритет locked>critical>voice>task>emotion>idle, параметры
+НАКАПЛИВАЮТСЯ из всех источников (amusement+frustration+speaking = ОДНО
+смешанное выражение — никогда три клипа), спектр low→оболочка/mid→глаз/
+high→частицы, переходы экспоненциальные (никогда мгновенные), без LLM/часов/
+случайности (стохастичность idle — seeded generator renderer'а), без NaN +
+12 тестов (смешивание/нормализация/переходы/приоритеты/аудио/interruption/
+disconnect — эмоции никогда не трогают authorization). CE-1 (overlay +
+геометрия + procedural idle) — designer-лейн в процессе.
+**Блокер снят:** прежний stall designer-линии (04.10, три подряд, ноль записей)
+не повторился — свежая сессия работает.
 
 ## Track 4 — Memory++ (biggest quality lever after voice)
 1. pgvector + embeddings (associative recall; Postgres ready).
