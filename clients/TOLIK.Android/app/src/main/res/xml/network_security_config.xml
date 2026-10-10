@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dev-phase transport security: TOLIK Core currently serves plain HTTP on the home
+  LAN / loopback (AGENTS.md §28 allows this only for the private-network phase).
+  HTTPS/TLS is mandatory for any remote (VPS) deployment — tighten this file to
+  base-config cleartextTrafficPermitted="false" plus explicit domain pins before
+  leaving the home network.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

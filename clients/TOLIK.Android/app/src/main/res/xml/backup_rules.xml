@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cloud backup: exclude the session-token and device-identity stores — a
+     backup must never carry usable credentials to another device (SECURITY §6). -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="tolik_session.xml" />
+    <exclude domain="sharedpref" path="tolik_device.xml" />
+</full-backup-content>

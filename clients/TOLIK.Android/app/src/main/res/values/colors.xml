@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material 3, light (decision: light theme only). -->
+    <color name="md_theme_primary">#3B5BA5</color>
+    <color name="md_theme_on_primary">#FFFFFF</color>
+    <color name="md_theme_primary_container">#DCE3F5</color>
+    <color name="md_theme_on_primary_container">#0F1B3D</color>
+    <color name="md_theme_surface">#FBF8FF</color>
+    <color name="md_theme_on_surface">#1A1B21</color>
+    <color name="md_theme_surface_variant">#E2E1EC</color>
+    <color name="md_theme_on_surface_variant">#45464F</color>
+    <color name="md_theme_error">#BA1A1A</color>
+    <color name="md_theme_on_error">#FFFFFF</color>
+    <color name="tolik_user_bubble">#DCE3F5</color>
+    <color name="tolik_tolik_bubble">#E2E1EC</color>
+    <color name="tolik_error_bubble">#FFDAD6</color>
+</resources>
