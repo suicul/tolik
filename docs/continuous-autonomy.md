@@ -191,13 +191,20 @@ CA-4 Task journal + real progress — DONE 10.10.2026 (commit d255e04:
     не выдумывается) + /tasks/{id}/journal POST+GET)
 CA-2 TaskSupervisor + heartbeat/liveness + stall detection        [CA-0, CA-1;
      watchdog расширение]
-CA-3 Checkpoints + resume-after-restart + TaskSteps persistence   [CA-0;
-     E2 план]
+CA-3 Checkpoints + resume-after-restart + TaskSteps persistence — DONE 10.10.2026
+    (commit c0c5716: TaskCheckpoint (phase/percent/branch/rollback state/evidence —
+    НИКОГДА «started = succeeded») + AttachCheckpoint/GetCheckpoint (newest wins) +
+    /tasks/{id}/checkpoint POST+GET)
 CA-4 Task journal + real progress tracking — DONE 10.10.2026       [CA-0]
      (commit d255e04)
 CA-5 Absence/return semantics + UserDisconnected ≠ TaskCancelled  [CA-4;
      RealtimeEventHub расширение]
-CA-6 WAITING/RECOVERING состояния + parallel + bounded recovery    [CA-2]
+CA-6 WAITING/RECOVERING состояния + parallel + bounded recovery — DONE 10.10.2026
+    (commit c0c5716: RecoveryPolicy — первый провал → RetrySame ОДИН раз →
+    AlternateStrategy → EscalatePauseAndAsk (STOP: пауза + сохранение + вопрос
+    владельцу; НИКОГДА build→fail→вечно; ClassifyFailure transient/permanent) +
+    WaitUntil.ConditionAsync (семантические ожидания: условие + timeout +
+    bounded poll вместо sleep'ов; отмена сразу))
 CA-7 Continuous autonomy engine (Mind + TaskSupervisor,           [Mind MI-3+,
      много целей, attention)                                       CA-2/CA-6]
 ```
