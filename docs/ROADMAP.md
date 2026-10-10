@@ -282,7 +282,7 @@ IP-5 Presence Migration с рендерами, IP-7/IP-8 Expression Composer/lib
 Genesis остаётся deliberate milestone — техническая готовность (split-brain
 prevention) СДЕЛАНА, ceremony — с владельцем.
 
-## Track 16 — Android client (Kotlin, thin) 🔨 реализация В ПРОЦЕССЕ (AN-0..2, директива владельца 10.10.2026 — церемония отложена)
+## Track 16 — Android client (Kotlin, thin) 🔨 IN PROGRESS — Full Mobile Embodiment master directive (10.10.2026)
 Стек: Kotlin (AGENTS §36), thin-клиент — НЕ Core logic; существующая заготовка
 `clients/TOLIK.Android/` (минимальные модели, HTTP client). Фазы:
 - AN-0 recon: заготовка, Kotlin окружение; signed transport (агент-паттерн фреймов)
@@ -296,14 +296,20 @@ Camera/Mic/GPS-if-authorized/Notifications), 14 (smartphone embodiment),
 pre-Genesis допустимо (thin, поверх контрактов); AN-3/4 — post-Genesis. Quest/
 Android НЕ получают Windows privileges (governance). Speaker verification —
 как на других клиентах: probabilistic hint, НИКОГДА authorization (§13).
-**Статус (10.10.2026):** реализация AN-0..2 в процессе (директива владельца —
-церемония отложена): Gradle-проект (Kotlin, classic Views/Material 3, minSdk 26,
-OkHttp+Gson+coroutines, без DI-фреймворков), transport impl (401/403 → failure,
-никогда локальная авторизация), chat screen, voice (mic → VAD → /voice/turn,
-TTS playback, barge-in), task monitoring (RealtimeEventHub WS) + notifications +
-confirmations. Android SDK на машине НЕТ (ANDROID_HOME пуст, adb/gradle
-отсутствуют) → код compile-pending: валидация при установке SDK. Токен агента —
-через TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
+**Статус (10.10.2026):** НОВЫЙ master directive владельца — полноценное приложение
+(Mobile Embodiment & Companion). Мастер-план: **docs/android-app.md** (решения:
+Kotlin + classic Views/Material 3 — Compose будущая опция; Cephalon renderer —
+SurfaceView + процедурный 2D Canvas CPU (та же философия, что десктоп: батарея/
+GPU-дружелюбно); **Expression State — СУЩЕСТВУЮЩИЙ контракт TOLIK.Contracts
+(0841765): ONE COMPOSER MANY RENDERERS — Core компоует и отдаёт по WS, Kotlin-
+зеркало wire-модели, порт композера НЕ создаётся**; display modes
+Companion/Fullscreen/Conversation/Voice/Compact; сеть — конфигурируемый endpoint,
+никогда зашитый IP; offline — outbox + последний подтверждённый статус со
+временем). Фазы AN-P1..P7 (Foundation/Cephalon Mobile/Conversation/Voice/Camera/
+Tasks/Presence); AN-P5/AN-P7 — post-Genesis; скрытая запись/съёмка и обход
+индикаторов Android ЗАПРЕЩЕНЫ. Android SDK на машине НЕТ → код compile-pending
+(валидация при установке SDK владельцем). Токен агента — через
+TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
 
 ## Pre-Genesis audit (oracle, 10.10.2026) — PASS, M1-M4 закрыты
 Верdict: все 9 security-инвариантов держат (trust ≠ authorization; никогда
