@@ -349,9 +349,17 @@ hex parity с десктопом, hazard encoding pinned). **Баг-фиксы:*
 KDoc с res/xml/*_rules.xml внутри глотал остаток файла). Асимметрия честно НЕ
 замаплена (как на десктопе — нет оси, фейк запрещён). Остаток AN-P5 (камера)/
 AN-P7 (Presence) — post-Genesis; device-тесты (docs/android-app.md §9) — post-SDK.
-**COMPILE-PENDING:** SDK нет; валидация: gradlew wrapper → :app:testDebugUnitTest
-(6 классов) → :app:assembleDebug → install → честные probe'ы (kill Core → «Нет
-связи»; bad token → auth-статус без reconnect loop; stale >15s → «Устарело…»).
+**BUILD GREEN (12.10.2026, commit 2243046):** эпоха compile-pending ЗАКРЫТА —
+первая реальная сборка: `:app:assembleDebug` + `:app:testDebugUnitTest` — BUILD
+SUCCESSFUL, **APK 6.2 MB** (app/build/outputs/apk/debug/app-debug.apk), **51
+юнит-тест 0 провалов** (6 suites). Gradle wrapper сгенерирован (gradle-8.7-all —
+совпадает с AS-кэшем владельца `~/.gradle/wrapper/dists`, ноль загрузок;
+local.properties machine-specific, gitignored). 12 реальных ошибок компиляции
+исправлены (BufferOverflow пакет channels; TrackedTask квалификация; val→var;
+два пропущенных .build(); flush-путь speechMs → @Volatile поле — оборачивание
+открытой реплики корректно). Установка: APK готов; валидация на устройстве —
+честные probe'ы (kill Core → «Нет связи»; bad token → auth-статус без reconnect
+loop; stale >15s → «Устарело…»).
 Токен агента — через TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
 
 ## Pre-Genesis audit (oracle, 10.10.2026) — PASS, M1-M4 закрыты
