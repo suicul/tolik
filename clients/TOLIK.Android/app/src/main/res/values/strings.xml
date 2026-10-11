@@ -53,4 +53,20 @@
     <string name="ok">ОК</string>
     <string name="cancel">Отмена</string>
     <string name="retry">Повторить</string>
+
+    <!-- Cephalon display modes (AN-P2) -->
+    <string name="mode_companion">Компаньон</string>
+    <string name="mode_presence">Присутствие</string>
+    <string name="mode_conversation">Чат</string>
+    <string name="mode_voice">Голос</string>
+    <string name="mode_compact">Мини</string>
+    <string name="cephalon_exit_presence">Свернуть</string>
+    <string name="compact_hint">Мини-режим: Толик рядом. Разверните через кнопки выше.</string>
+
+    <!-- Honest Cephalon status (директива §17/§20: состояние отражает реальные
+         данные — никогда не фейковое). -->
+    <string name="cephalon_status_offline">Нет связи с Core — локальный idle</string>
+    <string name="cephalon_status_awaiting">Подключено; expression-события ещё не приходят (Core без CE-2?)</string>
+    <string name="cephalon_status_auth">Сессия недействительна (401/403) — нужен вход заново</string>
+    <string name="cephalon_status_stale">Устарело (без событий &gt;15 с) — локальный idle; последний: %1$s %2$.0f с назад</string>
 </resources>

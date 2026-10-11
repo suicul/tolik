@@ -8,7 +8,8 @@ import android.content.SharedPreferences
  *
  * Security: the token is a Core-issued session credential held only in the
  * app's private prefs (MODE_PRIVATE) and explicitly excluded from cloud
- * backup / device transfer (res/xml/*_rules.xml) — copying app data must not
+ * backup / device transfer (res/xml/backup_rules.xml +
+ * res/xml/data_extraction_rules.xml) — copying app data must not
  * carry usable credentials elsewhere (SECURITY §6). No other secrets live on
  * the client: no model keys, no agent credentials, no authorization policy.
  */

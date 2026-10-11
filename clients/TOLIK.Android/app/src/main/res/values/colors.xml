@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Material 3, light (decision: light theme only). -->
+    <!-- Material 3, light values (DayNight: values-night/colors.xml holds the
+         dark variants; the system picks per configuration). -->
     <color name="md_theme_primary">#3B5BA5</color>
     <color name="md_theme_on_primary">#FFFFFF</color>
     <color name="md_theme_primary_container">#DCE3F5</color>
@@ -14,4 +15,13 @@
     <color name="tolik_user_bubble">#DCE3F5</color>
     <color name="tolik_tolik_bubble">#E2E1EC</color>
     <color name="tolik_error_bubble">#FFDAD6</color>
+
+    <!-- Cephalon presence: the renderer's visual space is FIXED and theme-
+         independent (docs/android-app.md §3: light/dark system settings must
+         not alter the Cephalon palette). The renderer paints its own
+         deep-space backdrop every frame; these resources match it for the
+         chrome around the surface. -->
+    <color name="cephalon_backdrop">#0C1322</color>
+    <color name="cephalon_status_backdrop">#CC0C1322</color>
+    <color name="cephalon_status_text">#C9D8EE</color>
 </resources>

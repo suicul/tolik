@@ -367,8 +367,23 @@ class OkHttpTolikTransport(
     // ─── TolikExtendedTransport: realtime events (GET /events/ws?token=…) ───
 
     override fun openEvents(sessionToken: String, listener: TolikEventsListener): TolikEventsStreamHandle {
-        return TolikEventSocket(http, url("/events/ws") + "?token=$sessionToken", listener)
+        return TolikEventSocket(http, eventsWebSocketUrl(base, sessionToken), listener)
     }
+}
+
+/**
+ * Builds the /events/ws URL with the session token percent-encoded as a query
+ * value. The token is Base64 and CAN contain '+' and '/' — a raw '+' decodes as
+ * a space server-side and the handshake 401s (verified live against the running
+ * Core; the same rule as Uri.EscapeDataString). Pure JVM — production-tested.
+ */
+internal fun eventsWebSocketUrl(baseUrl: String, sessionToken: String): String {
+    val encoded = try {
+        java.net.URLEncoder.encode(sessionToken, "UTF-8")
+    } catch (_: Exception) {
+        sessionToken // never happens for UTF-8; fail soft to prior behavior
+    }
+    return baseUrl.trim().trimEnd('/') + "/events/ws?token=$encoded"
 }
 
 /** OkHttp WebSocket for /events/ws with bounded reconnect backoff. */
@@ -401,6 +416,14 @@ private class TolikEventSocket(
         // Server frames: {"type":"hello","userId":…} and
         // {"type":"event","payload":{…}} — payloads are untrusted data
         // (§22/§23): they refresh views, they never grant anything.
+        // cephalon_expression frames route first (pure parser → normalized
+        // ExpressionOutput); every other frame falls through to the org.json
+        // path below. Malformed/unknown frames are ignored safely by both.
+        val expression = CephalonWireParser.parseFrame(text)
+        if (expression != null) {
+            listener.onCephalonExpression(expression)
+            return
+        }
         val obj = try {
             JSONObject(text)
         } catch (_: Exception) {
@@ -446,7 +469,15 @@ private class TolikEventSocket(
         // retry-forever — reconnect happens only for non-auth failures and
         // clean closes, with bounded backoff (§14: fail closed, no loops).
         val unauthorized = response?.code == 401
-        listener.onDisconnected(clean = false, cause = t)
+        // Surface auth failures explicitly (§14 honest fail): the caller can
+        // distinguish a 401 handshake from a network drop — never silent,
+        // never fake-idle-pretending-connected.
+        val cause = if (unauthorized) {
+            TolikApiException(401, "authentication_required")
+        } else {
+            t
+        }
+        listener.onDisconnected(clean = false, cause = cause)
         if (!unauthorized) scheduleReconnect()
     }
 

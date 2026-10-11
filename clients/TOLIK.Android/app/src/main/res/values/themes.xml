@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Material 3 light theme, no action bar (custom status header). -->
-    <style name="Theme.Tolik" parent="Theme.Material3.Light.NoActionBar">
+    <!-- Material 3 DayNight, no action bar (custom status header). Light values
+         live here; values-night/ overrides the same names for dark mode. The
+         Cephalon renderer's own palette is FIXED (deep-space blue family) and
+         must not follow the theme — docs/android-app.md §3. -->
+    <style name="Theme.Tolik" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/md_theme_primary</item>
         <item name="colorOnPrimary">@color/md_theme_on_primary</item>
         <item name="colorPrimaryContainer">@color/md_theme_primary_container</item>

@@ -47,4 +47,9 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("com.google.code.gson:gson:2.11.0")
+
+    // Test-only (never packaged into the APK): the AN-P2 pure-logic tests
+    // (wire mirror normalization, frame parsing, mode layouts, idle bounds)
+    // need a minimal runner; the app runtime dependency set is unchanged.
+    testImplementation("junit:junit:4.13.2")
 }

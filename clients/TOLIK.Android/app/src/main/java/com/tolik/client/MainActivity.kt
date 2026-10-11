@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.SystemClock
 import android.view.View
 import android.widget.Button
 import android.widget.EditText
@@ -18,7 +19,11 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 /**
  * TOLIK Android thin client — the single Activity (AGENTS.md §36).
@@ -55,11 +60,43 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
     private lateinit var taskList: RecyclerView
     private lateinit var tasksEmptyView: TextView
 
+    // Cephalon presence (AN-P2) — the renderer holds no logic beyond drawing;
+    // all state lives here in the thin Activity layer.
+    private lateinit var cephContainer: View
+    private lateinit var contentFrame: View
+    private lateinit var cephView: CephalonView
+    private lateinit var cephStatusText: TextView
+    private lateinit var cephExitButton: Button
+    private lateinit var compactHint: View
+    private lateinit var chatVoiceEntry: Button
+
+    /** Core expression events → the renderer (drop-oldest: the newest wins;
+     * a stale 5 Hz burst never queues up). */
+    private val expressionBus = MutableSharedFlow<ExpressionOutput>(
+        extraBufferCapacity = 8,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    private enum class CephConnectionState { DISCONNECTED, CONNECTED, AUTH_FAILED }
+
+    // Written from OkHttp WS threads, read from the main ticker.
+    @Volatile
+    private var cephState: CephConnectionState = CephConnectionState.DISCONNECTED
+    private var lastExpressionAtMs: Long = 0L
+    private var lastExpressionMode: ExpressionMode? = null
+    private var displayMode: CephalonDisplayMode = CephalonDisplayMode.Companion
+    private var currentScreenId: Int = 0
+
     private var eventsHandle: TolikEventsStreamHandle? = null
 
     private companion object {
         const val REQUEST_MIC = 41
         const val REQUEST_NOTIFICATIONS = 42
+
+        /** A connected stream silent past this is dead → honest local idle,
+         * never a held pose (desktop ExpressionLinkPresenter.StaleAfterSeconds
+         * — Core heartbeats idle ~1 s and pushes changes ~5 Hz). */
+        const val CEPHALON_STALE_AFTER_MS = 15_000L
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,7 +120,24 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
         setupTasks()
         setupVoice()
         setupHeader()
+        setupCephalon()
         showScreen(R.id.screen_chat)
+        applyDisplayMode(CephalonDisplayMode.Companion)
+
+        // Expression events → renderer + honest status age ticker.
+        lifecycleScope.launch {
+            expressionBus.collect { expression ->
+                lastExpressionAtMs = SystemClock.elapsedRealtime()
+                lastExpressionMode = expression.mode
+                cephView.setExpression(expression)
+            }
+        }
+        lifecycleScope.launch {
+            while (true) {
+                delay(500)
+                renderCephalonStatus()
+            }
+        }
     }
 
     override fun onStart() {
@@ -121,6 +175,13 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
         voiceCancelButton = findViewById(R.id.voice_cancel_button)
         taskList = findViewById(R.id.task_list)
         tasksEmptyView = findViewById(R.id.tasks_empty_view)
+        cephContainer = findViewById(R.id.cephalon_container)
+        contentFrame = findViewById(R.id.content_frame)
+        cephView = findViewById(R.id.cephalon_view)
+        cephStatusText = findViewById(R.id.cephalon_status)
+        cephExitButton = findViewById(R.id.cephalon_exit)
+        compactHint = findViewById(R.id.compact_hint)
+        chatVoiceEntry = findViewById(R.id.chat_voice_entry)
     }
 
     private fun setupHeader() {
@@ -183,12 +244,143 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
             if (ensureMicPermission()) voice.startTurn()
         }
         voiceCancelButton.setOnClickListener { voice.bargeIn() }
+        // Companion-mode voice entry: same barge-in/permission semantics.
+        chatVoiceEntry.setOnClickListener {
+            if (voice.currentState != VoiceSessionController.State.IDLE) {
+                voice.bargeIn()
+                return@setOnClickListener
+            }
+            if (ensureMicPermission()) voice.startTurn()
+        }
     }
 
     private fun showScreen(id: Int) {
+        currentScreenId = id
         screenChat.visibility = if (id == R.id.screen_chat) View.VISIBLE else View.GONE
         screenVoice.visibility = if (id == R.id.screen_voice) View.VISIBLE else View.GONE
         screenTasks.visibility = if (id == R.id.screen_tasks) View.VISIBLE else View.GONE
+    }
+
+    // ─── Cephalon display modes (AN-P2: typed enum + layout presets) ────────
+
+    private fun setupCephalon() {
+        findViewById<Button>(R.id.mode_companion).setOnClickListener {
+            applyDisplayMode(CephalonDisplayMode.Companion)
+        }
+        findViewById<Button>(R.id.mode_presence).setOnClickListener {
+            applyDisplayMode(CephalonDisplayMode.FullscreenPresence)
+        }
+        findViewById<Button>(R.id.mode_conversation).setOnClickListener {
+            applyDisplayMode(CephalonDisplayMode.Conversation)
+        }
+        findViewById<Button>(R.id.mode_voice).setOnClickListener {
+            applyDisplayMode(CephalonDisplayMode.Voice)
+        }
+        findViewById<Button>(R.id.mode_compact).setOnClickListener {
+            applyDisplayMode(CephalonDisplayMode.Compact)
+        }
+        cephExitButton.setOnClickListener { applyDisplayMode(CephalonDisplayMode.Companion) }
+    }
+
+    /** Applies the mode's layout preset (CephalonModeLayouts — data, not
+     * scattered conditionals). The Cephalon palette is mode-independent. */
+    private fun applyDisplayMode(mode: CephalonDisplayMode) {
+        displayMode = mode
+        val layout = CephalonModeLayouts.forMode(mode)
+
+        findViewById<View>(R.id.status_header).visibility =
+            if (layout.showAppHeader) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.mode_switcher).visibility =
+            if (layout.showModeSwitcher) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.bottom_nav).visibility =
+            if (layout.showBottomNav) View.VISIBLE else View.GONE
+        cephExitButton.visibility =
+            if (mode == CephalonDisplayMode.FullscreenPresence) View.VISIBLE else View.GONE
+
+        val cephParams = cephContainer.layoutParams as LinearLayout.LayoutParams
+        cephParams.weight = layout.cephalonWeight
+        cephParams.height = 0
+        cephContainer.layoutParams = cephParams
+
+        val contentParams = contentFrame.layoutParams as LinearLayout.LayoutParams
+        contentParams.weight = 1f - layout.cephalonWeight
+        contentParams.height = 0
+        contentFrame.layoutParams = contentParams
+        contentFrame.visibility =
+            if (mode == CephalonDisplayMode.FullscreenPresence) View.GONE else View.VISIBLE
+
+        compactHint.visibility =
+            if (mode == CephalonDisplayMode.Compact) View.VISIBLE else View.GONE
+
+        when (layout.content) {
+            CephalonContentScreen.None -> {
+                screenChat.visibility = View.GONE
+                screenVoice.visibility = View.GONE
+                screenTasks.visibility = View.GONE
+            }
+            else -> showScreen(
+                when (mode) {
+                    // Conversation/Voice name their primary screen; Companion
+                    // keeps whatever functional screen the user was on.
+                    CephalonDisplayMode.Conversation -> R.id.screen_chat
+                    CephalonDisplayMode.Voice -> R.id.screen_voice
+                    else -> if (currentScreenId != 0) currentScreenId else R.id.screen_chat
+                },
+            )
+        }
+        // History/voice-entry chrome follows the mode policy.
+        chatList.visibility =
+            if (layout.content == CephalonContentScreen.Chat && layout.showChatHistory) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+        chatVoiceEntry.visibility =
+            if (layout.content == CephalonContentScreen.Chat && layout.showVoiceEntry) {
+                View.VISIBLE
+            } else {
+                View.GONE
+            }
+    }
+
+    // ─── Honest Cephalon status (директива §17/§20: реальные данные, никогда
+    // не фейк: no connection → idle + offline; connected without events →
+    // awaiting; 401/403 → auth, never fake-connected; stale > 15 s → local
+    // idle + honest "stale", never a frozen pose; events → mode + age) ─────
+
+    /** Called every ~500 ms — the desktop presenter's Tick(): drops a stale
+     * drive and renders the honest status line. */
+    private fun renderCephalonStatus() {
+        val stale = dropStaleExpression()
+        cephStatusText.text = when (cephState) {
+            CephConnectionState.DISCONNECTED -> getString(R.string.cephalon_status_offline)
+            CephConnectionState.AUTH_FAILED -> getString(R.string.cephalon_status_auth)
+            CephConnectionState.CONNECTED -> when {
+                lastExpressionAtMs == 0L -> getString(R.string.cephalon_status_awaiting)
+                stale -> getString(
+                    R.string.cephalon_status_stale,
+                    lastExpressionMode?.wire ?: "Idle",
+                    (SystemClock.elapsedRealtime() - lastExpressionAtMs) / 1000.0,
+                )
+                else -> String.format(
+                    Locale.US,
+                    "%s · %.1f с",
+                    lastExpressionMode?.wire ?: "Idle",
+                    (SystemClock.elapsedRealtime() - lastExpressionAtMs) / 1000.0,
+                )
+            }
+        }
+    }
+
+    /** Staleness watchdog (desktop ExpressionLinkPresenter.Tick()): once the
+     * last real event is older than [CEPHALON_STALE_AFTER_MS], the renderer
+     * eases back to neutral local idle — the status says so honestly. */
+    private fun dropStaleExpression(): Boolean {
+        if (lastExpressionAtMs == 0L) return false
+        val ageMs = SystemClock.elapsedRealtime() - lastExpressionAtMs
+        if (ageMs <= CEPHALON_STALE_AFTER_MS) return false
+        cephView.clearExpression()
+        return true
     }
 
     // ─── Status header (thin: reflects Core, decides nothing) ───────────────
@@ -399,20 +591,45 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
         eventsHandle?.close()
         eventsHandle = transport.openEvents(token, object : TolikEventsListener {
             override fun onConnected() {
-                runOnUiThread { refreshStatus() }
+                cephState = CephConnectionState.CONNECTED
+                runOnUiThread {
+                    refreshStatus()
+                    renderCephalonStatus()
+                }
             }
 
             override fun onDisconnected(clean: Boolean, cause: Throwable?) {
                 // Auth failures surface in the header (no retry — the socket
                 // stops reconnecting on 401); non-auth reconnects are inside
-                // the transport's bounded backoff.
-                if (cause != null) {
-                    runOnUiThread {
-                        if (cause is TolikApiException) {
-                            renderStatus(describeFailure(cause), connected = false)
-                        }
-                    }
+                // the transport's bounded backoff. 401 arrives as an explicit
+                // TolikApiException from the transport — honest, never silent.
+                val apiError = cause as? TolikApiException
+                cephState = if (apiError?.isAuthError == true) {
+                    CephConnectionState.AUTH_FAILED
+                } else {
+                    CephConnectionState.DISCONNECTED
                 }
+                // DropDrive (desktop ExpressionLinkPresenter): without a stream
+                // the body falls back to local idle immediately — never a
+                // held pose on dead strings. The previous connection's events
+                // are history: after a reconnect the status honestly awaits
+                // NEW events instead of aging the old ones.
+                cephView.clearExpression()
+                lastExpressionAtMs = 0L
+                lastExpressionMode = null
+                runOnUiThread {
+                    if (apiError != null) {
+                        renderStatus(describeFailure(apiError), connected = false)
+                    }
+                    renderCephalonStatus()
+                }
+            }
+
+            override fun onCephalonExpression(expression: ExpressionOutput) {
+                // WS payloads are untrusted data (§22/§23): they drive the
+                // visual presence — they never grant anything, never change
+                // permissions, never touch identity.
+                expressionBus.tryEmit(expression)
             }
 
             override fun onTaskEvent(event: TolikWsTaskEvent) {

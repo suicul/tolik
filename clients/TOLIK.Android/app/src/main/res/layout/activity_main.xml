@@ -45,10 +45,123 @@
             android:textSize="12sp" />
     </LinearLayout>
 
+    <!-- Display mode switcher (Companion/Presence/Conversation/Voice/Compact). -->
+    <LinearLayout
+        android:id="@+id/mode_switcher"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/md_theme_surface_variant"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:paddingHorizontal="8dp"
+        android:paddingBottom="4dp">
+
+        <Button
+            android:id="@+id/mode_companion"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:minWidth="0dp"
+            android:text="@string/mode_companion"
+            android:textSize="10sp" />
+
+        <Button
+            android:id="@+id/mode_presence"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:minWidth="0dp"
+            android:text="@string/mode_presence"
+            android:textSize="10sp" />
+
+        <Button
+            android:id="@+id/mode_conversation"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:minWidth="0dp"
+            android:text="@string/mode_conversation"
+            android:textSize="10sp" />
+
+        <Button
+            android:id="@+id/mode_voice"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:minWidth="0dp"
+            android:text="@string/mode_voice"
+            android:textSize="10sp" />
+
+        <Button
+            android:id="@+id/mode_compact"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginHorizontal="2dp"
+            android:minWidth="0dp"
+            android:text="@string/mode_compact"
+            android:textSize="10sp" />
+    </LinearLayout>
+
+    <!-- Cephalon presence surface (AN-P2): procedural renderer + honest status.
+         Weight is set per display mode by MainActivity. The fixed deep-space
+         backdrop (renderer palette is theme-independent, docs/android-app.md
+         §3) avoids a white flash before the first surface frame in light mode. -->
     <FrameLayout
+        android:id="@+id/cephalon_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1">
+        android:layout_weight="0.42"
+        android:background="@color/cephalon_backdrop">
+
+        <com.tolik.client.CephalonView
+            android:id="@+id/cephalon_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Honest status line: connection + last expression age (never fake).
+             Fixed light text on the fixed dark pill — readable in both themes. -->
+        <TextView
+            android:id="@+id/cephalon_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|start"
+            android:layout_margin="8dp"
+            android:background="@color/cephalon_status_backdrop"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="3dp"
+            android:text="@string/cephalon_status_offline"
+            android:textAppearance="?attr/textAppearanceLabelSmall"
+            android:textColor="@color/cephalon_status_text" />
+
+        <!-- Exit from Fullscreen Presence (the only chrome there). -->
+        <Button
+            android:id="@+id/cephalon_exit"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:layout_margin="8dp"
+            android:minWidth="0dp"
+            android:text="@string/cephalon_exit_presence"
+            android:textSize="11sp"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <FrameLayout
+        android:id="@+id/content_frame"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="0.58">
 
         <!-- ── Chat screen ─────────────────────────────────────────────── -->
         <LinearLayout
@@ -98,6 +211,16 @@
                     android:layout_marginStart="6dp"
                     android:text="@string/chat_send" />
             </LinearLayout>
+
+            <!-- Voice entry (Companion mode only — Conversation hides it). -->
+            <Button
+                android:id="@+id/chat_voice_entry"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginHorizontal="8dp"
+                android:layout_marginBottom="4dp"
+                android:text="@string/voice_start" />
         </LinearLayout>
 
         <!-- ── Voice screen ────────────────────────────────────────────── -->
@@ -212,6 +335,17 @@
                 android:clipToPadding="false"
                 android:padding="8dp" />
         </LinearLayout>
+
+        <!-- Compact mode: a small state widget leaves the rest minimal. -->
+        <TextView
+            android:id="@+id/compact_hint"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/compact_hint"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="@color/md_theme_on_surface_variant"
+            android:visibility="gone" />
     </FrameLayout>
 
     <com.google.android.material.bottomnavigation.BottomNavigationView

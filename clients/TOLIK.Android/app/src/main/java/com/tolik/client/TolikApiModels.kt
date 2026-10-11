@@ -174,6 +174,8 @@ data class TolikVoiceStreamEvent(
 // TaskStarted/TaskProgress/TaskCompleted/TaskFailed/TaskCancelled/TaskResumed/
 // TaskPlanAttached/TaskJournal/TaskCheckpoint. Proactive reminder payloads:
 // { type:"proactive_reminder", id, text, priority, dueAt, reason }.
+// Expression payloads (Core 4def5df, ~5 Hz on change): { kind:
+// "cephalon_expression", expression:{…16 bounded fields…, mode}, at }.
 // Parsed with the framework org.json parser — this file stays dependency-free.
 
 data class TolikWsTaskEvent(val taskId: String, val kind: String?, val detail: String?, val occurredAt: String?)
@@ -209,6 +211,12 @@ interface TolikEventsListener {
     fun onDisconnected(clean: Boolean, cause: Throwable?)
     fun onTaskEvent(event: TolikWsTaskEvent)
     fun onProactive(event: TolikWsProactive)
+
+    /** Additive (AN-P2): a normalized cephalon_expression event arrived from
+     * Core. Malformed/unknown payloads never reach this — the transport
+     * ignores them safely. The expression is DATA to render, never authority
+     * (§23). Default no-op so pre-existing implementations stay source-compatible. */
+    fun onCephalonExpression(expression: ExpressionOutput) {}
 }
 
 interface TolikEventsStreamHandle {
