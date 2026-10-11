@@ -3,6 +3,69 @@
 Living plan: status + next actions per track. VPS migration is distant-future
 by owner decision — not on the active list.
 
+## ⚡ PLAN REFORM (директива владельца, 12.10.2026): PRE-GENESIS MAXIMIZATION
+
+> «Большинство функционала кроме VR надо сделать НЕ post-Genesis, а pre-Genesis.
+> До проведения церемонии должно быть как можно больше функционала и меньше ошибок.»
+
+**Принцип переклассификации: «механика до церемонии, рождение — на церемонии».**
+Всё детерминированное/тестируемое/интегрируемое ПЕРЕЕЗЖАЕТ в pre-Genesis.
+Авторизация/приватность НЕ ослабляются (AGENTS SECURITY-модель без изменений).
+**Эта секция SUPERSEDES post-Genesis пометки в треках ниже.**
+
+**ПЕРЕЕЗЖАЕТ в pre-Genesis (бывшие post-Genesis):**
+```text
+Track 3:  CE-3 (реальный TTS-спектр → FFT → bands), CE-4 (desktop awareness),
+          CE-5 (Expression DSL — bounded/validated/sandboxed)
+Track 9:  C (Windows Privilege Broker), D2, E2, F (Emergency Stop), G, H2;
+          CU-3..CU-10 (closed-loop, browser, skills, exploration, demo-learning,
+          long-running, cephalon) + CU-GA механика (goal runner, GAME_LEARNING_MODE,
+          observation hierarchy) — действия всегда через существующие authorization gates
+Track 10: SE-2 (Experiment Lab: sandbox/runner/experiment memory), SE-3 (бюджеты
+          TOLIK_OPT_*), SE-5/SE-6 (self-development pipeline + continuous loop),
+          SE-7 (Cephalon personality integration)
+Track 11: MI-3..MI-8 (DriveSystem→Motivation→Activity; Goals/Attention/Uncertainty/
+          Reflection; Emotion из переходов + Mood + VoiceEmotion; Journal; Proactive
+          policy; Self-model + Mind Inspector) + MI-9 seed-МЕХАНИЗМ (активация — на
+          церемонии) + MindState ЭКСПОРТ В HOST (цефалон выражает реальное состояние
+          ума ДО церемонии — теперь явная цель pre-Genesis)
+Track 12: CA-2 (TaskSupervisor/heartbeat/stall), CA-5 (absence/return), CA-7
+          (continuous engine)
+Track 13: MM-4..MM-6 (мобильное зрение/камера — permission+индикатор §50 всегда)
+Track 14: RA-3 (Reward system: типы/memory/anti-reward-hacking/Effort-vs-Result —
+          machinery; реальные reward-события живут с реальным использованием)
+Track 15: IP-3 (Identity Cryptography), IP-5/7/8 (presence transitions, миграционные
+          части)
+Track 16: AN-P5 (камера в Android), AN-P7 (Presence в Android)
+```
+
+**ОСТАЁТСЯ post-Genesis (ceremony-constitutive / owner-bound / VR):**
+```text
+- СА ЦЕРЕМОНИЯ Genesis (MFA, создание Identity, TOLIK_DEV_AUTO_TOKEN off,
+  voice phase, живой enrollment владельца/Maria — выходные)
+- RA-4 (Genesis FIRSTS — первый успех/провал/self-discovery рождённой сущности:
+  по определению существуют только после рождения)
+- GU-0..GU-7 (Genesis Upbringing — фазы воспитания рождённой сущности)
+- VR (Meta Quest 3S — явно исключено владельцем из pre-Genesis)
+- Живая голосовая верификация (требует владельца с микрофоном)
+```
+
+**Порядок реализации (по ценности/зависимостям; каждая фаза — build+tests+audit,
+меньше ошибок = дисциплина качества не ослабляется):**
+```text
+PRG-1  Mind Activation: MI-3..MI-6 + MindState экспорт в host → цефалон выражает
+       реальный ум; наибольшая видимая ценность, строится на MI-0..2 + expression pipeline
+PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-спектр) + desktop awareness + DSL
+PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
+PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
+PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
+PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
+PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
+PRG-8  IP-3/5/7/8: identity-криптография + presence-переходы (миграционная готовность)
+PRG-9  MM-4..6 + AN-P5/AN-P7: мультимодальность + мобильные органы
+```
+Статус PRG-фаз отмечается в треках ниже по мере реализации.
+
 ## Model policy (owner-approved 30.09.2026, cloud keys live since)
 
 - Chatter/voice (Simple): **qwen3:4b local**, `think:false`, `num_predict:250`, `num_ctx:8192`.
