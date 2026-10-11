@@ -332,10 +332,26 @@ VoiceClient РЕАЛИЗОВАН (WavWriter/VAD gate/UtteranceSegmenter — по
 Contracts/UtteranceSegmenter.cs/mic engine/TTS player; turn-level echo gate +400ms
 tail — 0.10 семантика; barge-in M5; speaker tier — HINT ONLY), tasks/
 confirmations/WS мониторинг + notifications, DeviceIdentity (AndroidKeyStore EC
-P-256 non-exportable). **COMPILE-PENDING:** Android SDK на машине НЕТ → НЕ
-собран/не запущен; валидация при установке SDK владельцем (gradle wrapper +
-assembleDebug; README документирует). Контракт-отклонения найдены и задокументированы
-(README): /chat → 'answer', /voice/turn-stream JSON-или-SSE, MFA 403 surfaced.
+P-256 non-exportable). **AN-P2 Cephalon Mobile DONE (commit c27197f, 24 файла, compile-pending):**
+CephalonView (SurfaceView процедурный Canvas CPU: глаз + 2-3 слоя оболочки + glow
++ частицы + breathing; синий primary, красный ТОЛЬКО Alert/Locked — реальные
+события Core; DayNight тема с фиксированной палитрой цефалона), Kotlin-зеркало
+ExpressionOutput (нормализация per-field с нейтральными дефолтами — garbage
+никогда не рендерится как spike), wire-парсер (lenient per-field, envelope-
+malformation → ignore), 15s staleness watchdog → local idle (зеркалит десктоп),
+DropDrive при WS disconnect (reconnect честно ждёт новых событий), @Volatile
+состояние (OkHttp threads), eventsWebSocketUrl() — URL-encoding Base64-токена
+как протестированная pure-функция (live-verified hazard), 5 display modes,
+CephalonModeMapping/CephalonEventsUrl тесты (RED-only-Alert/Locked инвариант,
+hex parity с десктопом, hazard encoding pinned). **Баг-фиксы:** RadialGradient
+в canvas-координатах (halo сэмплил верхний угол), нормализация нейтральных
+дефолтов, **SessionStore.kt compile-blocker** (Kotlin block comments НЕСТЯ —
+KDoc с res/xml/*_rules.xml внутри глотал остаток файла). Асимметрия честно НЕ
+замаплена (как на десктопе — нет оси, фейк запрещён). Остаток AN-P5 (камера)/
+AN-P7 (Presence) — post-Genesis; device-тесты (docs/android-app.md §9) — post-SDK.
+**COMPILE-PENDING:** SDK нет; валидация: gradlew wrapper → :app:testDebugUnitTest
+(6 классов) → :app:assembleDebug → install → честные probe'ы (kill Core → «Нет
+связи»; bad token → auth-статус без reconnect loop; stale >15s → «Устарело…»).
 Токен агента — через TOLIK_SESSION_TOKEN env (m6-хардненинг, не командная строка).
 
 ## Pre-Genesis audit (oracle, 10.10.2026) — PASS, M1-M4 закрыты
