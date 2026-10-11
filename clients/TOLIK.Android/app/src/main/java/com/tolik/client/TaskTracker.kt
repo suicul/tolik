@@ -12,7 +12,7 @@ class TaskTracker {
 
     data class TrackedTask(
         val id: String,
-        val description: String?,
+        var description: String?,
         var status: String?,
         var lastEvent: String? = null,
     )

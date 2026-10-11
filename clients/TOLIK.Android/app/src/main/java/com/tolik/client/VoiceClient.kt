@@ -238,6 +238,10 @@ class MicCaptureEngine(
     private val running = AtomicBoolean(false)
     private var thread: Thread? = null
     private var record: AudioRecord? = null
+    /** Speech duration of the open utterance (M6 MIN_SPEECH_MS mirror): the mic
+     * loop resets it when a new capture opens; stop() reads it after joining the
+     * loop thread (the join gives happens-before) to wrap the still-open utterance. */
+    @Volatile private var speechMs = 0
 
     val isRunning: Boolean get() = running.get()
 
@@ -275,7 +279,6 @@ class MicCaptureEngine(
             val chunkMs = VoiceClientDefaults.CHUNK_MS
             val chunk = ByteArray(chunkSize)
             var wasCapturing = false
-            var speechMs = 0
             try {
                 audioRecord.startRecording()
                 while (running.get()) {
@@ -314,7 +317,7 @@ class MicCaptureEngine(
         }
         thread = null
         record = null
-        segmenter.flush()?.let(onUtterance)
+        segmenter.flush()?.let { onUtterance(Utterance(it, speechMs)) }
         onStateChange(false)
     }
 }

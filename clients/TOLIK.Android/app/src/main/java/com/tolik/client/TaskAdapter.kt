@@ -12,8 +12,8 @@ import androidx.recyclerview.widget.RecyclerView
  * the endpoints and feeds results back into TaskTracker.
  */
 class TaskAdapter(
-    private val onCancel: (TrackedTask) -> Unit,
-    private val onConfirm: (TrackedTask) -> Unit,
+    private val onCancel: (TaskTracker.TrackedTask) -> Unit,
+    private val onConfirm: (TaskTracker.TrackedTask) -> Unit,
 ) : RecyclerView.Adapter<TaskAdapter.Holder>() {
 
     private var items: List<TaskTracker.TrackedTask> = emptyList()

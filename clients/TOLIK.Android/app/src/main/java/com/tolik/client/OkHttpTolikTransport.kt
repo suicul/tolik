@@ -183,7 +183,7 @@ class OkHttpTolikTransport(
     override suspend fun getLocalDevToken(): Result<TolikSessionTokenResponse> {
         // GET /auth/local-token — dev-only on Core (TOLIK_DEV_AUTO_TOKEN +
         // loopback, blocked after Genesis). Otherwise 404 — surfaced as failure.
-        return call(Request.Builder().url(url("/auth/local-token")).get(), jsonParser())
+        return call(Request.Builder().url(url("/auth/local-token")).get().build(), jsonParser())
     }
 
     override suspend fun enroll(request: TolikEnrollRequest): Result<TolikEnrollResponse> {
@@ -200,7 +200,7 @@ class OkHttpTolikTransport(
 
     override suspend fun getHealth(): Result<TolikHealth> {
         // /health is intentionally unauthenticated on Core.
-        return call(Request.Builder().url(url("/health")).get(), jsonParser())
+        return call(Request.Builder().url(url("/health")).get().build(), jsonParser())
     }
 
     override suspend fun listAgents(sessionToken: String?): Result<List<TolikAgentInfo>> {
