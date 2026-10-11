@@ -178,6 +178,26 @@ app.Services.GetRequiredService<TaskLifecycle>().EventPublished += ev =>
         case "TaskCancelled": mindRuntime.OnTaskCancelled(); break;
     }
 };
+// Mind journal (docs/mind.md §7, MI-6 — PLAN REFORM PRG-1b): TOLIK's operational
+// history — «Чем занимался пока меня не было?». Privacy by construction: the entries
+// carry ONLY fixed kinds + generic summaries (no task IDs, no message text, no user
+// identifiers ever enter it), so any authenticated session may safely read it.
+app.MapGet("/mind/journal", async (HttpContext context, IdentityService identity, MindRuntime mind, CancellationToken cancellationToken) =>
+{
+    var header = context.Request.Headers.Authorization.ToString();
+    var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
+    if (principal is null) return AuthenticationRequired(context);
+    var hours = 8.0;
+    if (double.TryParse(context.Request.Query["hours"].ToString(), out var requested) && requested >= 1 && requested <= 168)
+        hours = requested; // bounded [1..168] h; unparsable keeps the honest default (fail closed)
+    var now = DateTimeOffset.UtcNow;
+    var entries = mind.Journal.Recent(32);
+    return Results.Ok(new
+    {
+        summary = mind.Journal.RenderRecent(TimeSpan.FromHours(hours), now),
+        entries = entries.Select(e => new { at = e.At, kind = e.Kind, summary = e.Summary })
+    });
+});
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {

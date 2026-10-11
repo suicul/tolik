@@ -21,6 +21,19 @@ public sealed class MindRuntime
     private DateTimeOffset _lastInteraction = DateTimeOffset.MinValue;
     private int _activeTasks;
 
+    // PRG-1b (MI-5 + MI-6): the operational journal (privacy by construction — no user
+    // content ever enters it) and the transition-based emotion engine. Both thread-safe
+    // internally; the feeds happen under this runtime's gate (no reverse lock order).
+    private readonly MindJournal _journal = new();
+    private readonly EmotionEngine _emotions = new();
+
+    /// <summary>TOLIK's operational journal («Чем занимался пока меня не было?» — mind.md §7).
+    /// The entries contain ONLY fixed kinds + generic summaries: safe for any authenticated reader.</summary>
+    public MindJournal Journal => _journal;
+
+    /// <summary>The slow mood layer (MI-5): valence/arousal/momentum from the real transitions.</summary>
+    public MoodState MoodSnapshot() => _emotions.Mood;
+
     /// <summary>Point-in-time mind snapshot (the versioned MI-0 record).</summary>
     public MindSnapshot Snapshot() { lock (_gate) { return _state.Snapshot(); } }
 
@@ -32,6 +45,7 @@ public sealed class MindRuntime
         {
             _lastInteraction = at ?? DateTimeOffset.UtcNow;
             _state.Adjust("social", +0.10);
+            _journal.Record(MindJournalKind.Interaction, at);
         }
     }
 
@@ -43,7 +57,8 @@ public sealed class MindRuntime
             _activeTasks++;
             _state.Adjust("cognitive_load", +0.10);
             _curiosity.Register("new_application");
-            SyncDrives(); // the state stays current for the expression (no 1 s tick lag)
+            SyncDrives();
+            _journal.Record(MindJournalKind.TaskStarted);
         }
     }
 
@@ -56,6 +71,7 @@ public sealed class MindRuntime
             _novelty.Register("repeat");          // routine outcome: novelty decays
             _curiosity.Register("satisfied");     // the drive's object is resolved
             SyncDrives();
+            _journal.Record(MindJournalKind.TaskCompleted);
         }
     }
 
@@ -68,12 +84,17 @@ public sealed class MindRuntime
             _curiosity.Register("failed_action");
             _novelty.Register("unexpected");
             SyncDrives();
+            _journal.Record(MindJournalKind.TaskFailed);
         }
     }
 
     public void OnTaskCancelled()
     {
-        lock (_gate) { _activeTasks = Math.Max(0, _activeTasks - 1); }
+        lock (_gate)
+        {
+            _activeTasks = Math.Max(0, _activeTasks - 1);
+            _journal.Record(MindJournalKind.TaskCancelled);
+        }
     }
 
     /// <summary>
@@ -87,6 +108,9 @@ public sealed class MindRuntime
     {
         lock (_gate)
         {
+            // MI-5: the emotion engine measures the PREVIOUS→current transition BEFORE
+            // this tick's state updates (the events' effects are the transitions).
+            _emotions.OnSnapshot(_state.Snapshot());
             var minutesSince = MinutesSinceInteraction(now);
             var recent = minutesSince < 5.0;
             var boredom = _boredomModel.Compute(minutesSince, _activeTasks > 0, _novelty.Current, recent);
