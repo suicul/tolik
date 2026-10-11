@@ -8,6 +8,7 @@ public static class MindJournalKind
     public const string TaskFailed = "TaskFailed";
     public const string TaskCancelled = "TaskCancelled";
     public const string Interaction = "Interaction";
+    public const string ActivitySelected = "ActivitySelected";
 }
 
 /// <summary>One operational journal record: when, what kind, the deterministic generic summary.</summary>
@@ -49,6 +50,20 @@ public sealed class MindJournal
         }
     }
 
+    /// <summary>Records the selected activity (MI-3): the kind is the fixed literal;
+    /// the summary MUST come from the fixed candidate catalog — anything else is
+    /// rejected (privacy by construction, §19/§50: never caller-supplied content).</summary>
+    public void RecordActivity(string activitySummary, DateTimeOffset? at = null)
+    {
+        if (!ActivityCandidate.Catalog.Any(c => string.Equals(c.Summary, activitySummary, StringComparison.Ordinal)))
+            throw new ArgumentException("Unknown activity summary (fixed catalog only — never user content).", nameof(activitySummary));
+        lock (_gate)
+        {
+            _entries.Enqueue(new MindJournalEntry(at ?? DateTimeOffset.UtcNow, MindJournalKind.ActivitySelected, activitySummary));
+            while (_entries.Count > Capacity) _entries.Dequeue();
+        }
+    }
+
     /// <summary>The most recent entries (oldest-first; the newest `limit` kept).</summary>
     public IReadOnlyList<MindJournalEntry> Recent(int limit = 32)
     {
@@ -66,6 +81,7 @@ public sealed class MindJournal
     public string RenderRecent(TimeSpan window, DateTimeOffset now)
     {
         int started = 0, completed = 0, failed = 0, cancelled = 0, interactions = 0;
+        var activities = new List<string>();
         lock (_gate)
         {
             var from = now - window;
@@ -79,6 +95,9 @@ public sealed class MindJournal
                     case MindJournalKind.TaskFailed: failed++; break;
                     case MindJournalKind.TaskCancelled: cancelled++; break;
                     case MindJournalKind.Interaction: interactions++; break;
+                    case MindJournalKind.ActivitySelected:
+                        if (!activities.Contains(entry.Summary)) activities.Add(entry.Summary); // the distinct occupations
+                        break;
                 }
             }
         }
@@ -89,6 +108,7 @@ public sealed class MindJournal
         if (failed > 0) parts.Add(TaskPhrase(failed, "провалена", "провалено"));
         if (cancelled > 0) parts.Add(TaskPhrase(cancelled, "отменена", "отменено"));
         if (interactions > 0) parts.Add($"{interactions} {PluralWord(interactions, "взаимодействие", "взаимодействия", "взаимодействий")}");
+        if (activities.Count > 0) parts.Add($"занятия: {string.Join(", ", activities)}");
         return parts.Count == 0
             ? $"{WindowText(window)}: ничего существенного."
             : $"{WindowText(window)}: {string.Join(", ", parts)}.";

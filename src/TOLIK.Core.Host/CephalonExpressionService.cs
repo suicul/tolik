@@ -117,6 +117,9 @@ public sealed class CephalonExpressionService(
 
     private async Task TickAsync(double deltaSeconds, DateTimeOffset now, CancellationToken cancellationToken)
     {
+        // The mind's security input flows even when nobody is connected (the mind lives
+        // between conversations — MI-3's Safety drive + the LOCKED catalog restriction).
+        mind.MarkSecurityState(securityState.IsLocked);
         var userIds = hub.ConnectedUserIds;
         if (userIds.Count == 0) return; // nobody listening — zero work (and quiet tests)
         var locked = securityState.IsLocked;

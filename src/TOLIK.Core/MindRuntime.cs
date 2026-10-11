@@ -27,6 +27,14 @@ public sealed class MindRuntime
     private readonly MindJournal _journal = new();
     private readonly EmotionEngine _emotions = new();
 
+    // MI-3 (PRG-1c): the activity selection machinery — the drives → the fixed
+    // candidate catalog → utility → ONE activity, «просто idle — тоже правильный
+    // результат». The security state is a real input (LOCKED restricts the catalog).
+    private readonly ActivitySelector _activities = new();
+    private bool _locked;
+    private int _selectorTickCount;
+    private string? _currentActivity;
+
     /// <summary>TOLIK's operational journal («Чем занимался пока меня не было?» — mind.md §7).
     /// The entries contain ONLY fixed kinds + generic summaries: safe for any authenticated reader.</summary>
     public MindJournal Journal => _journal;
@@ -47,6 +55,14 @@ public sealed class MindRuntime
             _state.Adjust("social", +0.10);
             _journal.Record(MindJournalKind.Interaction, at);
         }
+    }
+
+    /// <summary>The Core's LOCKED state — a real input to the mind (the Safety drive
+    /// spikes; the activity catalog restricts to the safety-relevant candidates —
+    /// the mind does not wander while locked). Fed by the host watcher each tick.</summary>
+    public void MarkSecurityState(bool locked)
+    {
+        lock (_gate) { _locked = locked; }
     }
 
     /// <summary>Task lifecycle events (from the host's TaskLifecycle.EventPublished).</summary>
@@ -122,6 +138,26 @@ public sealed class MindRuntime
             _state.Adjust("satisfaction", -_state.Satisfaction * 0.01);
             _state.Adjust("social", -_state.SocialDrive * 0.005);
             _state.SetActivityLevel(_activeTasks > 0 ? "FOCUSED" : boredom >= 0.6 ? "REST" : "LOW");
+
+            // MI-3 (PRG-1c): the activity selection every ~30 ticks (30 s at 1 Hz) —
+            // drives → the fixed candidate catalog → utility → ONE activity («просто
+            // idle — тоже правильный результат», mind §8). The journal records the
+            // TRANSITIONS only (a steady activity is not noise); the attention target
+            // is routing state, NEVER an authorization input. LOCKED restricts the
+            // catalog to the safety-relevant candidates (the mind does not wander).
+            _selectorTickCount++;
+            if (_selectorTickCount >= 30)
+            {
+                _selectorTickCount = 0;
+                var drives = DriveSystem.Compute(_state.Snapshot(), new MindInputs(minutesSince, _activeTasks, _locked));
+                var selection = _activities.Select(drives, now, _locked);
+                if (!string.Equals(_currentActivity, selection.Activity, StringComparison.Ordinal))
+                {
+                    _currentActivity = selection.Activity;
+                    _journal.RecordActivity(selection.Summary, now);
+                    _state.SetAttention(selection.Activity);
+                }
+            }
         }
     }
 
