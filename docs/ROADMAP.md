@@ -55,6 +55,16 @@ Track 16: AN-P5 (камера в Android), AN-P7 (Presence в Android)
 ```text
 PRG-1  Mind Activation: MI-3..MI-6 + MindState экспорт в host → цефалон выражает
        реальный ум; наибольшая видимая ценность, строится на MI-0..2 + expression pipeline
+       — ЧАСТИЧНО DONE 12.10.2026 (commit 65e37dd, 706/706): MindRuntime (MI-0 state +
+       MI-2 drives на РЕАЛЬНЫХ входах: chat-взаимодействия + task lifecycle события;
+       1 Hz tick — boredom из условий, decay реакций, activity level; SyncDrives без
+       лага) + MindRuntimeService (host; ум живёт независимо от подключённых
+       рендереров) + CephalonExpressionService wiring (Curiosity/Frustration/
+       Confidence/Attention текут в выражение; Amusement/Uncertainty/Thinking —
+       честные нули до humor/planner) + /chat MarkInteraction + task-event hook;
+       +8 тестов. Остаток PRG-1: MI-3 (DriveSystem→Motivation→Activity selection),
+       MI-4 (Goals/Attention/Uncertainty/Reflection), MI-5 (Emotion из переходов +
+       Mood + VoiceEmotion), MI-6 (Journal)
 PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-спектр) + desktop awareness + DSL
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
