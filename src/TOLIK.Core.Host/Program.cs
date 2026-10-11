@@ -105,6 +105,13 @@ builder.Services.AddSingleton<RealtimeEventHub>(realtime);
 // state → the pure ExpressionComposer → WebSocket broadcast. Read-only observation:
 // it never authorizes anything (SECURITY & TRUST MODEL §1).
 builder.Services.AddHostedService<CephalonExpressionService>();
+// MindRuntime (docs/mind.md MI-0..2 + PLAN REFORM PRG-1a, 12.10.2026): TOLIK's ONE
+// running mind — the deterministic state machine wired to real measurable inputs
+// (interactions, task lifecycle). The 1 Hz host service keeps the mind alive
+// regardless of connected renderers/users (TOLIK exists between conversations).
+// It creates MOTIVATION, never permission — this authorizes nothing.
+builder.Services.AddSingleton<MindRuntime>();
+builder.Services.AddHostedService<MindRuntimeService>();
 builder.Services.Configure<OllamaOptions>(
     builder.Configuration.GetSection("TOLIK_MODEL_OFFLINE"));
 builder.Services.AddHttpClient<OllamaProvider>(
@@ -157,6 +164,20 @@ await ApplyPendingMigrationsAsync(app.Services);
 
 app.Services.GetRequiredService<TaskLifecycle>().EventPublished += ev =>
     realtime.PublishToTaskOwner(ev.TaskId, System.Text.Json.JsonSerializer.Serialize(new { ev.TaskId, ev.Kind, ev.Detail, ev.OccurredAt }));
+// MindRuntime feeding (PLAN REFORM PRG-1a): the task lifecycle events drive the
+// mind's activity/novelty/curiosity/satisfaction/frustration — real events only
+// (§50: nothing fabricated). Unknown kinds are ignored (additive, forward-safe).
+var mindRuntime = app.Services.GetRequiredService<MindRuntime>();
+app.Services.GetRequiredService<TaskLifecycle>().EventPublished += ev =>
+{
+    switch (ev.Kind)
+    {
+        case "TaskStarted": mindRuntime.OnTaskStarted(); break;
+        case "TaskCompleted": mindRuntime.OnTaskCompleted(); break;
+        case "TaskFailed": mindRuntime.OnTaskFailed(); break;
+        case "TaskCancelled": mindRuntime.OnTaskCancelled(); break;
+    }
+};
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -1853,13 +1874,16 @@ app.MapDelete("/models/preference", async (HttpContext context, IdentityService 
     return Results.Ok(new { preference = (string?)null, remembered = false });
 });
 
-app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentityService identity, ModelRouter router, ModelCompletionClient completion, ScopedMemory memory, DurableMemoryStore durableMemory, FileToolService files, LearnedRuleStore rules, PersonalContextStore personalStore, CancellationToken cancellationToken) =>
+app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentityService identity, ModelRouter router, ModelCompletionClient completion, ScopedMemory memory, DurableMemoryStore durableMemory, FileToolService files, LearnedRuleStore rules, PersonalContextStore personalStore, MindRuntime mind, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
     if (principal is null) return AuthenticationRequired(context);
     if (string.IsNullOrWhiteSpace(request.Message)) return Results.BadRequest(new { error = "message_required" });
     var action = request.Message.Trim();
+    // A real authenticated chat message IS a meaningful interaction (mind MI-0: the
+    // inactivity clock resets; the social drive bumps — PLAN REFORM PRG-1a; §50: real input only).
+    mind.MarkInteraction();
     // Deterministic intent routing (В§24: LLM never decides permissions/actions alone).
     var intent = IntentRouter.Classify(action);
     var dispatcher = new AgentCommandDispatcher(context.RequestServices.GetRequiredService<AgentConnectionRegistry>());

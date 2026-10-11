@@ -40,9 +40,12 @@ internal sealed record CephalonUserSnapshot(int RunningTasks, double TaskProgres
 ///   • voice: an in-flight voice turn (VoiceTurnRegistry) → IsSpeaking — wired COARSELY;
 ///     amplitude/frequency bands stay honest zeros (no cheap audio telemetry in Core —
 ///     the CE-3 remainder: wire the real TTS spectrum when the voice service exposes it);
-///   • Mind state: NOT wired (post-Genesis boundary, docs/cephalon-desktop.md §7) —
-///     the emotional fields stay honest zeros until the mood layer lands (CE-3);
-///   • Recovery/Attention/SignalLevel: no real source exists in Core yet — honest zeros.
+///   • Mind state: WIRED (PLAN REFORM PRG-1a, 12.10.2026 — pre-Genesis by the owner's
+///     directive): the MindRuntime's real drives (curiosity/frustration/satisfaction→
+///     confidence/attention from real interactions + task outcomes) flow into the
+///     emotional fields; Amusement/Uncertainty/Thinking stay honest zeros until the
+///     humor/planner tracks land;
+///   • Recovery/SignalLevel: no real source exists in Core yet — honest zeros.
 ///
 /// Security invariants (SECURITY & TRUST MODEL): the service is READ-ONLY state
 /// observation + broadcast — it never authorizes anything, never logs secrets, and the
@@ -55,6 +58,7 @@ public sealed class CephalonExpressionService(
     TaskLifecycle lifecycle,
     CoreSecurityState securityState,
     VoiceTurnRegistry voiceTurns,
+    TOLIK.Core.MindRuntime mind,
     ILogger<CephalonExpressionService> logger) : BackgroundService
 {
     internal const string WireKind = "cephalon_expression";
@@ -139,7 +143,10 @@ public sealed class CephalonExpressionService(
         {
             var previous = _previous.TryGetValue(userId, out var prev) ? prev : null;
             var lastPublished = _lastPublish.TryGetValue(userId, out var at) ? at : DateTimeOffset.MinValue;
-            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, previous, deltaSeconds);
+            // The mind is ONE for the ONE TOLIK (identity-level, not per-user): its real
+            // drives flow into every connected owner's expression (PLAN REFORM PRG-1a).
+            var emotions = mind.ExpressionEmotions(now);
+            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, emotions, previous, deltaSeconds);
 
             _previous[userId] = output;
             if (!ShouldPublish(previous, output, now - lastPublished, _heartbeat)) continue;
@@ -185,17 +192,24 @@ public sealed class CephalonExpressionService(
     /// <summary>
     /// The honest state mapping (§50): every field below traces to a REAL source or
     /// stays at its honest zero. The composer's own normalization then clamps garbage.
+    /// Mind wiring (PLAN REFORM PRG-1a, 12.10.2026): the MindRuntime's real drives
+    /// FLOW — curiosity/frustration/satisfaction→confidence/attention. Amusement/
+    /// Uncertainty/Thinking have no real source yet (humor/planner tracks) — honest zeros.
     /// </summary>
     internal static ExpressionState ToExpressionState(
-        CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected)
+        CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected,
+        MindEmotions emotions)
     {
         var processing = snapshot.RunningTasks > 0 ? 1.0 : 0.0;
         return new ExpressionState(
-            // Cognitive: no attention/thinking source in Core yet (CE-3 remainder) — 0.
-            Attention: 0, Thinking: 0,
+            // Cognitive: attention = the real interaction focus (decays ~10 min);
+            // thinking has no planner source in Core yet — honest 0.
+            Attention: emotions.Attention, Thinking: 0,
             Concentration: processing, // a running task IS the current focus
-            // Emotional (Mind MI-0..2): NOT wired (post-Genesis boundary, §7) — honest zeros.
-            Amusement: 0, Curiosity: 0, Frustration: 0, Confidence: 0, Uncertainty: 0,
+            // Emotional (Mind MI-0..2 WIRED per PRG-1a): the real mind drives flow;
+            // amusement/uncertainty stay honest zeros until humor/planner land.
+            Amusement: 0, Curiosity: emotions.Curiosity, Frustration: emotions.Frustration,
+            Confidence: emotions.Confidence, Uncertainty: 0,
             // Social presence: the owner has a live authenticated WS connection.
             Engagement: connected ? 1.0 : 0.0,
             // Voice: coarse turn lifecycle (CE-3 remainder: real amplitude + bands).
@@ -212,9 +226,9 @@ public sealed class CephalonExpressionService(
     /// <summary>Per-user composition: the existing pure composer does ALL the math.</summary>
     internal static ExpressionOutput ComposeFor(
         CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected,
-        ExpressionOutput? previous, double deltaSeconds) =>
+        MindEmotions emotions, ExpressionOutput? previous, double deltaSeconds) =>
         ExpressionComposer.Compose(
-            ToExpressionState(snapshot, locked, turnInFlight, connected).Normalized(),
+            ToExpressionState(snapshot, locked, turnInFlight, connected, emotions).Normalized(),
             previous, deltaSeconds);
 
     /// <summary>

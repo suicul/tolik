@@ -18,26 +18,32 @@ public sealed class CephalonExpressionServiceTests
     private static CephalonUserSnapshot WorkingSnapshot(double progress = 0.4) => new(RunningTasks: 2, TaskProgress: progress);
     private static readonly CephalonUserSnapshot EmptySnapshot = CephalonUserSnapshot.Empty;
 
-    /// <summary>Nearly-converged compose (dt=1 with the composer's internal clamp).</summary>
+    /// <summary>Nearly-converged compose (dt=1 with the composer's internal clamp).
+    /// MindEmotions default to the zero record — the pure-mapping tests pass explicit values.</summary>
+    private static readonly MindEmotions MindZero = new(Curiosity: 0, Frustration: 0, Confidence: 0, Attention: 0);
+
     private static ExpressionOutput ComposeConverged(
         CephalonUserSnapshot snapshot, bool locked = false, bool turnInFlight = false, bool connected = true,
-        ExpressionOutput? previous = null) =>
-        CephalonExpressionService.ComposeFor(snapshot, locked, turnInFlight, connected, previous, deltaSeconds: 1.0);
+        ExpressionOutput? previous = null, MindEmotions? emotions = null) =>
+        CephalonExpressionService.ComposeFor(snapshot, locked, turnInFlight, connected, emotions ?? MindZero, previous, deltaSeconds: 1.0);
 
-    // ─────────────────────────── Honest zeros (§50) ───────────────────────────
+    // ─────────────────────── Mind wired (PLAN REFORM PRG-1a) ───────────────────────
 
     [Fact]
-    public void Mind_and_unwired_sources_stay_honest_zeros_while_real_state_is_wired()
+    public void Mind_drives_flow_while_unwired_sources_stay_honest_zeros()
     {
-        var state = CephalonExpressionService.ToExpressionState(WorkingSnapshot(progress: 0.6), locked: false, turnInFlight: false, connected: true);
-        // Mind (post-Genesis boundary, docs/cephalon-desktop.md §7): NEVER wired — zeros.
+        // PRG-1a (12.10.2026): the mind IS wired — the real drives FLOW into the
+        // expression; sources that do not exist yet stay honest zeros (§50).
+        var emotions = new MindEmotions(Curiosity: 0.7, Frustration: 0.2, Confidence: 0.5, Attention: 0.8);
+        var state = CephalonExpressionService.ToExpressionState(WorkingSnapshot(progress: 0.6), locked: false, turnInFlight: false, connected: true, emotions);
+        // Mind drives flow (wired):
+        Assert.Equal(0.7, state.Curiosity);
+        Assert.Equal(0.2, state.Frustration);
+        Assert.Equal(0.5, state.Confidence);
+        Assert.Equal(0.8, state.Attention);
+        // No real source yet — honest zeros, never fabricated:
         Assert.Equal(0, state.Amusement);
-        Assert.Equal(0, state.Curiosity);
-        Assert.Equal(0, state.Frustration);
-        Assert.Equal(0, state.Confidence);
         Assert.Equal(0, state.Uncertainty);
-        // No real source in Core yet — honest zeros, never fabricated.
-        Assert.Equal(0, state.Attention);
         Assert.Equal(0, state.Thinking);
         Assert.Equal(0, state.Recovery);
         Assert.Equal(SystemSignalLevel.None, state.SignalLevel);
@@ -57,7 +63,7 @@ public sealed class CephalonExpressionServiceTests
     [Fact]
     public void Empty_snapshot_composes_to_honest_idle()
     {
-        var state = CephalonExpressionService.ToExpressionState(EmptySnapshot, locked: false, turnInFlight: false, connected: false);
+        var state = CephalonExpressionService.ToExpressionState(EmptySnapshot, locked: false, turnInFlight: false, connected: false, MindZero);
         Assert.Equal(0, state.Processing);
         Assert.Equal(0, state.TaskProgress);
         Assert.Equal(0, state.Engagement);
@@ -75,7 +81,7 @@ public sealed class CephalonExpressionServiceTests
     {
         // The turn lifecycle is the coarse isSpeaking source; the spectrum stays zero
         // (CE-3 remainder) — Speaking mode with a calm body, never a fake waveform.
-        var state = CephalonExpressionService.ToExpressionState(WorkingSnapshot(), locked: false, turnInFlight: true, connected: true);
+        var state = CephalonExpressionService.ToExpressionState(WorkingSnapshot(), locked: false, turnInFlight: true, connected: true, MindZero);
         Assert.True(state.IsSpeaking);
         Assert.Equal(0, state.Amplitude);
         Assert.Equal(0, state.LowBand);
