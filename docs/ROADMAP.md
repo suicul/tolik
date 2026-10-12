@@ -86,6 +86,17 @@ PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-сп�
        режимы Focus/Gaming детект — поверх CU-1/2 контрактов), **CE-5** (Expression
        DSL: bounded/validated/sandboxed, версии, feedback)
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
+       — ЧАСТИЧНО DONE 12.10.2026 (763/763; оркестратором, параллельно с des-7):
+       **CA-2** (92f4e5c): TaskSupervisorService — RUNNING-таск watchdog: живость =
+       последний lifecycle-event (EventPublished-трекинг) + CreatedAt как честный
+       persisted-пол (рестарт НИКОГДА не даёт ложный stall — unknown = fresh, §50);
+       bounded-лестница (L1 mind замечает (frustration/uncertainty/journal «Задача
+       приостановилась») → L2 WS-уведомление владельцу (per-user routing) → L3 PAUSE
+       через существующий lifecycle (stop + preserve + ask; НИКОГДА auto-cancel));
+       счётчик сбрасывается при возврате активности; TOLIK_CA_* fail-closed; bounded
+       memory; §40 loop never dies silently. Остаток: **CA-5** (absence/return:
+       UserDisconnected ≠ TaskCancelled + презентация возвращения), **CA-7**
+       (continuous engine: Mind + TaskSupervisor интеграция, много целей, attention)
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
