@@ -10,6 +10,7 @@ public static class MindJournalKind
     public const string Interaction = "Interaction";
     public const string ActivitySelected = "ActivitySelected";
     public const string GoalOutcome = "GoalOutcome";
+    public const string TaskStalled = "TaskStalled";
 }
 
 /// <summary>One operational journal record: when, what kind, the deterministic generic summary.</summary>
@@ -41,6 +42,7 @@ public sealed class MindJournal
             MindJournalKind.TaskCompleted => "Задача завершена",
             MindJournalKind.TaskFailed => "Задача провалена",
             MindJournalKind.TaskCancelled => "Задача отменена",
+            MindJournalKind.TaskStalled => "Задача приостановилась",
             MindJournalKind.Interaction => "Взаимодействие",
             _ => throw new ArgumentException("Unknown journal kind (fixed literals only — never user content).", nameof(kind))
         };
@@ -101,7 +103,7 @@ public sealed class MindJournal
     /// The plural forms follow the Russian rules (1/2-4/5+); an empty window is honest.</summary>
     public string RenderRecent(TimeSpan window, DateTimeOffset now)
     {
-        int started = 0, completed = 0, failed = 0, cancelled = 0, interactions = 0;
+        int started = 0, completed = 0, failed = 0, cancelled = 0, interactions = 0, stalledCount = 0;
         var activities = new List<string>();
         lock (_gate)
         {
@@ -115,6 +117,7 @@ public sealed class MindJournal
                     case MindJournalKind.TaskCompleted: completed++; break;
                     case MindJournalKind.TaskFailed: failed++; break;
                     case MindJournalKind.TaskCancelled: cancelled++; break;
+                    case MindJournalKind.TaskStalled: stalledCount++; break;
                     case MindJournalKind.Interaction: interactions++; break;
                     case MindJournalKind.ActivitySelected:
                         if (!activities.Contains(entry.Summary)) activities.Add(entry.Summary); // the distinct occupations
@@ -128,6 +131,7 @@ public sealed class MindJournal
         if (completed > 0) parts.Add(TaskPhrase(completed, "завершена", "завершено"));
         if (failed > 0) parts.Add(TaskPhrase(failed, "провалена", "провалено"));
         if (cancelled > 0) parts.Add(TaskPhrase(cancelled, "отменена", "отменено"));
+        if (stalledCount > 0) parts.Add(TaskPhrase(stalledCount, "приостановилась", "приостановлено"));
         if (interactions > 0) parts.Add($"{interactions} {PluralWord(interactions, "взаимодействие", "взаимодействия", "взаимодействий")}");
         if (activities.Count > 0) parts.Add($"занятия: {string.Join(", ", activities)}");
         return parts.Count == 0

@@ -112,6 +112,11 @@ builder.Services.AddHostedService<CephalonExpressionService>();
 // It creates MOTIVATION, never permission — this authorizes nothing.
 builder.Services.AddSingleton<MindRuntime>();
 builder.Services.AddHostedService<MindRuntimeService>();
+// TaskSupervisorService (CA-2 — PLAN REFORM PRG-3a): the RUNNING-task watchdog —
+// the liveness/stall detection with the bounded escalation ladder (L1 the mind
+// notices → L2 the owner notification → L3 the pause: stop + preserve + ask;
+// NEVER auto-cancel). Read-only observation + the existing Pause transition.
+builder.Services.AddHostedService<TaskSupervisorService>();
 // VoiceSpectrumState (CE-3 — PLAN REFORM PRG-2): analyzes the real TTS audio as it
 // flows through Core → the amplitude/bands → the Cephalon expression (директива §9:
 // the low band moves the shell, the mid the eye, the high the particles). WAV only —

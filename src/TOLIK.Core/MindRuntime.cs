@@ -122,6 +122,19 @@ public sealed class MindRuntime
         }
     }
 
+    /// <summary>CA-2 (PRG-3a): a running task went STALLED — the supervisor's honest
+    /// observation. A stall is mildly frustrating and raises the uncertainty
+    /// (something is not progressing as expected — a real signal, never a guess).</summary>
+    public void OnTaskStalled()
+    {
+        lock (_gate)
+        {
+            _state.Adjust("frustration", +0.05);
+            _uncertainty = Math.Clamp(_uncertainty + 0.10, 0.0, 1.0);
+            _journal.Record(MindJournalKind.TaskStalled);
+        }
+    }
+
     /// <summary>
     /// The 1 Hz tick (driven by the host's MindRuntimeService): the boredom emerges
     /// from the measurable conditions via the existing MI-2 BoredomModel (never a
