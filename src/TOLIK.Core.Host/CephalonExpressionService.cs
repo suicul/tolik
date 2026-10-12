@@ -209,10 +209,11 @@ public sealed class CephalonExpressionService(
             // thinking has no planner source in Core yet — honest 0.
             Attention: emotions.Attention, Thinking: 0,
             Concentration: processing, // a running task IS the current focus
-            // Emotional (Mind MI-0..2 WIRED per PRG-1a): the real mind drives flow;
-            // amusement/uncertainty stay honest zeros until humor/planner land.
+            // Emotional (Mind MI-0..4 WIRED per PRG-1a/1d): the real mind drives flow —
+            // curiosity/frustration/confidence/attention/uncertainty; amusement/thinking
+            // stay honest zeros until the humor/planner tracks land.
             Amusement: 0, Curiosity: emotions.Curiosity, Frustration: emotions.Frustration,
-            Confidence: emotions.Confidence, Uncertainty: 0,
+            Confidence: emotions.Confidence, Uncertainty: emotions.Uncertainty,
             // Social presence: the owner has a live authenticated WS connection.
             Engagement: connected ? 1.0 : 0.0,
             // Voice: coarse turn lifecycle (CE-3 remainder: real amplitude + bands).

@@ -35,6 +35,12 @@ public sealed class MindRuntime
     private int _selectorTickCount;
     private string? _currentActivity;
 
+    // MI-4 (PRG-1d): the internal goals (the occupations as bounded trackable objects)
+    // and the explicit uncertainty level (the real signals: failures raise it, the
+    // steady observations decay it — never a guess).
+    private readonly GoalStore _goals = new();
+    private double _uncertainty;
+
     /// <summary>TOLIK's operational journal («Чем занимался пока меня не было?» — mind.md §7).
     /// The entries contain ONLY fixed kinds + generic summaries: safe for any authenticated reader.</summary>
     public MindJournal Journal => _journal;
@@ -101,6 +107,9 @@ public sealed class MindRuntime
             _novelty.Register("unexpected");
             SyncDrives();
             _journal.Record(MindJournalKind.TaskFailed);
+            // MI-4: a failure raises the explicit uncertainty — something went
+            // unexpectedly (a real observation, never a guess; decays in the tick).
+            _uncertainty = Math.Clamp(_uncertainty + 0.20, 0.0, 1.0);
         }
     }
 
@@ -139,11 +148,27 @@ public sealed class MindRuntime
             _state.Adjust("social", -_state.SocialDrive * 0.005);
             _state.SetActivityLevel(_activeTasks > 0 ? "FOCUSED" : boredom >= 0.6 ? "REST" : "LOW");
 
+            // MI-4: the explicit uncertainty decays as the observations stabilize
+            // (~0.5%/tick — a real signal: the failures raise it, time calms it).
+            _uncertainty = Math.Clamp(_uncertainty * 0.995, 0.0, 1.0);
+
+            // MI-4: the goals tick — the REAL satisfaction/expiry rules; the journal
+            // records the status TRANSITIONS only (the steady state is not noise).
+            foreach (var (goal, newStatus) in _goals.Tick(_activeTasks, _curiosity.Intensity, now))
+                _journal.RecordGoalOutcome(goal.Type, newStatus, now);
+
+            // MI-4: the attention arbitration (mind §5): the direct interaction outranks
+            // the active task, which outranks the internal occupation; idle is valid.
+            // Routing state ONLY — NEVER an authorization input.
+            _state.SetAttention(
+                minutesSince < 2.0 ? "user" :
+                _activeTasks > 0 ? "task" :
+                _currentActivity ?? "idle");
+
             // MI-3 (PRG-1c): the activity selection every ~30 ticks (30 s at 1 Hz) —
             // drives → the fixed candidate catalog → utility → ONE activity («просто
             // idle — тоже правильный результат», mind §8). The journal records the
-            // TRANSITIONS only (a steady activity is not noise); the attention target
-            // is routing state, NEVER an authorization input. LOCKED restricts the
+            // TRANSITIONS only (a steady activity is not noise); LOCKED restricts the
             // catalog to the safety-relevant candidates (the mind does not wander).
             _selectorTickCount++;
             if (_selectorTickCount >= 30)
@@ -155,7 +180,10 @@ public sealed class MindRuntime
                 {
                     _currentActivity = selection.Activity;
                     _journal.RecordActivity(selection.Summary, now);
-                    _state.SetAttention(selection.Activity);
+                    // MI-4: the non-idle occupation becomes/refreshes an internal goal
+                    // (bounded, deduped per type — the occupations, not the noise).
+                    if (selection.Activity != ActivityNames.Idle)
+                        _goals.UpsertFromActivity(selection.Activity, now);
                 }
             }
         }
@@ -180,7 +208,29 @@ public sealed class MindRuntime
                 Curiosity: _state.Curiosity,
                 Frustration: _state.Frustration,
                 Confidence: _state.Satisfaction, // satisfaction ≈ earned confidence
-                Attention: attention);
+                Attention: attention,
+                Uncertainty: _uncertainty);
+        }
+    }
+
+    /// <summary>
+    /// The bounded reflection (mind.md §5, MI-4): the deterministic outcome statistics
+    /// over the recent journal window — REAL observations only, never invented lessons.
+    /// «Как прошло recent время?» reads from this.
+    /// </summary>
+    public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            var from = now - window;
+            var recent = _journal.Recent(512).Where(e => e.At >= from).ToList();
+            var completed = recent.Count(e => e.Kind == MindJournalKind.TaskCompleted);
+            var failed = recent.Count(e => e.Kind == MindJournalKind.TaskFailed);
+            var satisfied = recent.Count(e => e.Kind == MindJournalKind.GoalOutcome && e.Summary.StartsWith("Цель достигнута", StringComparison.Ordinal));
+            var total = completed + failed;
+            return total == 0
+                ? "Недавних исходов задач не было."
+                : $"Из {total} исходов задач: завершено {completed}, провалено {failed}; целей достигнуто: {satisfied}.";
         }
     }
 
@@ -199,9 +249,11 @@ public sealed class MindRuntime
 }
 
 /// <summary>The mind-driven emotional values for the ExpressionState (PRG-1a: the
-/// Cephalon expresses the REAL mind — curiosity/frustration/confidence/attention).</summary>
+/// Cephalon expresses the REAL mind — curiosity/frustration/confidence/attention;
+/// PRG-1d: uncertainty is wired too). Amusement/Thinking have no real source yet.</summary>
 public sealed record MindEmotions(
     double Curiosity,
     double Frustration,
     double Confidence,
-    double Attention);
+    double Attention,
+    double Uncertainty = 0.0);

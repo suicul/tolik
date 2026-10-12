@@ -9,6 +9,7 @@ public static class MindJournalKind
     public const string TaskCancelled = "TaskCancelled";
     public const string Interaction = "Interaction";
     public const string ActivitySelected = "ActivitySelected";
+    public const string GoalOutcome = "GoalOutcome";
 }
 
 /// <summary>One operational journal record: when, what kind, the deterministic generic summary.</summary>
@@ -60,6 +61,26 @@ public sealed class MindJournal
         lock (_gate)
         {
             _entries.Enqueue(new MindJournalEntry(at ?? DateTimeOffset.UtcNow, MindJournalKind.ActivitySelected, activitySummary));
+            while (_entries.Count > Capacity) _entries.Dequeue();
+        }
+    }
+
+    /// <summary>Records a goal outcome (MI-4): the goal type must be a fixed catalog
+    /// activity and the status one of the fixed literals (Satisfied|Expired) — anything
+    /// else is rejected (privacy by construction, §19/§50: never caller content).</summary>
+    public void RecordGoalOutcome(string goalType, string status, DateTimeOffset? at = null)
+    {
+        var candidate = ActivityCandidate.Catalog.FirstOrDefault(c => string.Equals(c.Name, goalType, StringComparison.Ordinal))
+            ?? throw new ArgumentException("Unknown goal type (fixed catalog only).", nameof(goalType));
+        var summary = status switch
+        {
+            "Satisfied" => $"Цель достигнута: {candidate.Summary}",
+            "Expired" => $"Цель истекла: {candidate.Summary}",
+            _ => throw new ArgumentException("Unknown goal status (Satisfied|Expired only).", nameof(status))
+        };
+        lock (_gate)
+        {
+            _entries.Enqueue(new MindJournalEntry(at ?? DateTimeOffset.UtcNow, MindJournalKind.GoalOutcome, summary));
             while (_entries.Count > Capacity) _entries.Dequeue();
         }
     }
