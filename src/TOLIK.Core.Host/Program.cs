@@ -112,6 +112,11 @@ builder.Services.AddHostedService<CephalonExpressionService>();
 // It creates MOTIVATION, never permission — this authorizes nothing.
 builder.Services.AddSingleton<MindRuntime>();
 builder.Services.AddHostedService<MindRuntimeService>();
+// VoiceSpectrumState (CE-3 — PLAN REFORM PRG-2): analyzes the real TTS audio as it
+// flows through Core → the amplitude/bands → the Cephalon expression (директива §9:
+// the low band moves the shell, the mid the eye, the high the particles). WAV only —
+// the MP3 fallback skips honestly.
+builder.Services.AddSingleton<VoiceSpectrumState>();
 builder.Services.Configure<OllamaOptions>(
     builder.Configuration.GetSection("TOLIK_MODEL_OFFLINE"));
 builder.Services.AddHttpClient<OllamaProvider>(
@@ -552,6 +557,7 @@ static async Task<IResult?> ProcessSimpleIntentAsync(
         var profile = context.RequestServices.GetRequiredService<VoiceProfile>();
         var runtimeState = context.RequestServices.GetRequiredService<VoiceRuntimeState>();
         var audio = await gate.SynthesizeIfEnabledAsync(new TtsRequest(replyText, profile, VoiceMode.Normal), runtimeState.Current, context.RequestAborted);
+        if (audio is not null) context.RequestServices.GetRequiredService<VoiceSpectrumState>().Analyze(audio.Data); // CE-3: the real outgoing audio feeds the expression
         return Results.Ok(new VoiceTurnResponse(transcription, replyText, VoiceMode.Normal, audio?.Data, audio?.ContentType, null));
     }
 }
@@ -2065,7 +2071,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: {sanitized.Text}", "chat.assistant", 0.8, cancellationToken);
     return Results.Ok(new { answer = sanitized.Text, model = route.Model, action = "model_response", details = route.Model, source = "model", filteredInstructions = sanitized.RemovedInstructions });
 });
-app.MapPost("/voice/process", async (VoiceHttpRequest request, HttpContext context, IdentityService identity, IVoiceService voice, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, CancellationToken cancellationToken) =>
+app.MapPost("/voice/process", async (VoiceHttpRequest request, HttpContext context, IdentityService identity, IVoiceService voice, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceSpectrumState spectrum, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
@@ -2086,6 +2092,7 @@ app.MapPost("/voice/process", async (VoiceHttpRequest request, HttpContext conte
     }
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {raw}", "voice.assistant", 0.8, cancellationToken);
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(raw, profile, voiceResponse.Mode), request.RuntimeMode, cancellationToken);
+    if (audio is not null) spectrum.Analyze(audio.Data); // CE-3: the real outgoing audio feeds the expression
     return Results.Ok(new { text = raw, mode = voiceResponse.Mode, audio = audio is null ? null : Convert.ToBase64String(audio.Data), contentType = audio?.ContentType, model = route.Model });
 });
 app.MapPost("/voice/transcribe", async (HttpContext context, IdentityService identity, WhisperSttProvider stt, DurableMemoryStore durableMemory, CancellationToken cancellationToken) =>
@@ -2118,7 +2125,7 @@ app.MapPost("/voice/transcribe", async (HttpContext context, IdentityService ide
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (stt): {result.Text}", "voice.stt", 1, cancellationToken);
     return Results.Ok(new { text = result.Text, language = result.Language, durationSeconds = result.DurationSeconds, model = result.Model });
 });
-app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, VoiceSpectrumState spectrum, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -2214,9 +2221,10 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         ? runtimeState.Current
         : request.RuntimeMode;
     var audio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, cancellationToken);
+    if (audio is not null) spectrum.Analyze(audio.Data); // CE-3: the real outgoing audio feeds the expression
     return Results.Ok(new VoiceTurnResponse(transcription.Text, sanitized.Text, VoiceMode.Normal, audio?.Data, audio?.ContentType, route.Model, speakerVerified, speakerConfidence, speakerTier, speakerReason));
 });
-app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, CancellationToken cancellationToken) =>
+app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, VoiceTurnRegistry turnRegistry, VoiceTurnTelemetry telemetry, AuditWriter audit, IConfiguration configuration, VoiceSpectrumState spectrum, CancellationToken cancellationToken) =>
 {
     // Streaming voice turn (voice-runtime-v2.md 0.5/M4b): SSE — LLM deltas → sentence
     // chunks → TTS per-sentence → audio events as they arrive. The client plays
@@ -2338,6 +2346,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
                     if (spoken >= VoiceResponsePolicy.MaxSpokenSentences(VoiceResponsePolicy.Classify(fullText.ToString())))
                         continue; // budget spent — the rest stays text (deltas carry it)
                     var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, ct);
+                    if (chunkAudio is not null) spectrum.Analyze(chunkAudio.Data); // CE-3: the real outgoing audio feeds the expression
                     if (chunkAudio is not null)
                     {
                         spoken++;
@@ -2361,6 +2370,7 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
                 var chunkAudio = await tts.SynthesizeIfEnabledAsync(new TtsRequest(speech, profile, VoiceMode.Normal), effectiveMode, ct);
                 if (chunkAudio is not null)
                 {
+                    spectrum.Analyze(chunkAudio.Data); // CE-3: the real outgoing audio feeds the expression
                     spoken++;
                     await WriteSseAsync(System.Text.Json.JsonSerializer.Serialize(new { type = "audio", audio = Convert.ToBase64String(chunkAudio.Data) }));
                 }

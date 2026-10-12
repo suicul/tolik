@@ -25,7 +25,7 @@ public sealed class CephalonExpressionServiceTests
     private static ExpressionOutput ComposeConverged(
         CephalonUserSnapshot snapshot, bool locked = false, bool turnInFlight = false, bool connected = true,
         ExpressionOutput? previous = null, MindEmotions? emotions = null) =>
-        CephalonExpressionService.ComposeFor(snapshot, locked, turnInFlight, connected, emotions ?? MindZero, previous, deltaSeconds: 1.0);
+        CephalonExpressionService.ComposeFor(snapshot, locked, turnInFlight, connected, emotions ?? MindZero, voice: null, previous, deltaSeconds: 1.0);
 
     // ─────────────────────── Mind wired (PLAN REFORM PRG-1a) ───────────────────────
 

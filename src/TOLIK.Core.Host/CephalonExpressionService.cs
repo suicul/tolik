@@ -59,6 +59,7 @@ public sealed class CephalonExpressionService(
     CoreSecurityState securityState,
     VoiceTurnRegistry voiceTurns,
     TOLIK.Core.MindRuntime mind,
+    TOLIK.Core.VoiceSpectrumState spectrum,
     ILogger<CephalonExpressionService> logger) : BackgroundService
 {
     internal const string WireKind = "cephalon_expression";
@@ -142,6 +143,9 @@ public sealed class CephalonExpressionService(
             gathered = userIds.Select(u => (u, CephalonUserSnapshot.Empty)).ToList();
         }
 
+        // CE-3: the real outgoing TTS spectrum — ONE reading per tick (the singleton
+        // voice; the honest zeros during the pauses are the spectrum's own rule).
+        var voice = spectrum.Current(now);
         foreach (var (userId, snapshot) in gathered)
         {
             var previous = _previous.TryGetValue(userId, out var prev) ? prev : null;
@@ -149,7 +153,7 @@ public sealed class CephalonExpressionService(
             // The mind is ONE for the ONE TOLIK (identity-level, not per-user): its real
             // drives flow into every connected owner's expression (PLAN REFORM PRG-1a).
             var emotions = mind.ExpressionEmotions(now);
-            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, emotions, previous, deltaSeconds);
+            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, emotions, voice, previous, deltaSeconds);
 
             _previous[userId] = output;
             if (!ShouldPublish(previous, output, now - lastPublished, _heartbeat)) continue;
@@ -201,7 +205,7 @@ public sealed class CephalonExpressionService(
     /// </summary>
     internal static ExpressionState ToExpressionState(
         CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected,
-        MindEmotions emotions)
+        MindEmotions emotions, VoiceLevels? voice = null)
     {
         var processing = snapshot.RunningTasks > 0 ? 1.0 : 0.0;
         return new ExpressionState(
@@ -216,9 +220,13 @@ public sealed class CephalonExpressionService(
             Confidence: emotions.Confidence, Uncertainty: emotions.Uncertainty,
             // Social presence: the owner has a live authenticated WS connection.
             Engagement: connected ? 1.0 : 0.0,
-            // Voice: coarse turn lifecycle (CE-3 remainder: real amplitude + bands).
+            // Voice: the turn lifecycle (IsSpeaking) + the REAL outgoing TTS spectrum
+            // (CE-3, PRG-2): the WAV-path audio feeds the amplitude/bands — the body
+            // reacts to its own voice; the MP3 fallback and the pauses read as zeros
+            // (the spectrum's own honest-silence rule — never a fake waveform).
             IsSpeaking: turnInFlight,
-            Amplitude: 0, LowBand: 0, MidBand: 0, HighBand: 0,
+            Amplitude: voice?.Amplitude ?? 0, LowBand: voice?.Low ?? 0,
+            MidBand: voice?.Mid ?? 0, HighBand: voice?.High ?? 0,
             // System alarms: no real alarm source in Core yet — honest None (never fake).
             SignalLevel: SystemSignalLevel.None,
             Processing: processing,
@@ -230,9 +238,9 @@ public sealed class CephalonExpressionService(
     /// <summary>Per-user composition: the existing pure composer does ALL the math.</summary>
     internal static ExpressionOutput ComposeFor(
         CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected,
-        MindEmotions emotions, ExpressionOutput? previous, double deltaSeconds) =>
+        MindEmotions emotions, VoiceLevels? voice, ExpressionOutput? previous, double deltaSeconds) =>
         ExpressionComposer.Compose(
-            ToExpressionState(snapshot, locked, turnInFlight, connected, emotions).Normalized(),
+            ToExpressionState(snapshot, locked, turnInFlight, connected, emotions, voice).Normalized(),
             previous, deltaSeconds);
 
     /// <summary>
