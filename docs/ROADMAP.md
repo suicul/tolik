@@ -55,23 +55,24 @@ Track 16: AN-P5 (камера в Android), AN-P7 (Presence в Android)
 ```text
 PRG-1  Mind Activation: MI-3..MI-6 + MindState экспорт в host → цефалон выражает
        реальный ум; наибольшая видимая ценность, строится на MI-0..2 + expression pipeline
-       — ЧАСТИЧНО DONE 12.10.2026 (733/733): **1a** (65e37dd): MindRuntime (MI-0 state +
-       MI-2 drives на РЕАЛЬНЫХ входах; 1 Hz host-сервис — ум живёт независимо от
-       подключённых) + CephalonExpressionService wiring (Curiosity/Frustration/
-       Confidence/Attention текут; Amusement/Uncertainty/Thinking — честные нули) +
-       /chat MarkInteraction + task-event hook; **1b** (4c21717): MI-5 EmotionEngine
-       (импульсы из переходов ~1%/tick decay; Mood EWMA ~30мин: Valence/Arousal/
-       Momentum; NaN-гварды) + MI-6 MindJournal (ring 512; фиксированные kinds —
-       неизвестные ОТВЕРГАЮТСЯ, приватность by-construction; русские плюрализмы;
-       RenderRecent; GET /mind/journal) — реализовано оркестратором после 3 подряд
-       stall'ов fixer-лейнов; **1c** (90ec890): MI-3 DriveSystem (15 драйвов из
-       измеримых входов; boredom-производные через TOLIK_DRIVE_*; LOCKED → Safety
-       spike) + ActivitySelector (фиксированный каталог кандидатов; utility +
-       Idle-baseline «idle — валидный результат»; cooldown анти-луп; LOCKED
-       ограничивает каталог; journal только переходы; attention target — routing
-       only). Остаток PRG-1: **MI-4** (Goals: типы+детерминированная генерация;
-       Attention арбитраж; Uncertainty явная; Reflection bounded) — исполнение
-       не-idle кандидатов (selection готова) тоже с MI-4/SE-5
+       — ✅ **COMPLETE 12.10.2026 (746/746; реализовано оркестратором после stall-кластера
+       fixer-лейнов)**: **1a** (65e37dd): MindRuntime (MI-0 state + MI-2 drives на
+       РЕАЛЬНЫХ входах; 1 Hz host-сервис — ум живёт независимо от подключённых;
+       live-verified end-to-end: /chat → attention 0.655 в выражении) + Cephalon
+       wiring; **1b** (4c21717): MI-5 EmotionEngine (импульсы из переходов; Mood EWMA
+       ~30мин Valence/Arousal/Momentum) + MI-6 MindJournal (ring 512; фиксированные
+       kinds — неизвестные ОТВЕРГАЮТСЯ, приватность by-construction; русские
+       плюрализмы; GET /mind/journal); **1c** (90ec890): MI-3 DriveSystem (15 драйвов;
+       boredom-производные TOLIK_DRIVE_*; LOCKED → Safety spike) + ActivitySelector
+       (фиксированный каталог; utility + Idle-baseline «idle — валидный результат»;
+       cooldown анти-луп; LOCKED ограничивает; journal только переходы); **1d**
+       (98579b4): MI-4 MindGoals (занятия → цели: dedup per type; satisfaction из
+       РЕАЛЬНЫХ правил — work drains/curiosity decays/timeout; max 8) + Attention
+       арбитраж (user > task > occupation > idle — routing only) + Uncertainty
+       (провал +0.20, decay; WIRED в ExpressionState — цефалон показывает реальную
+       неуверенность) + Reflection (детерминированная статистика исходов, никогда
+       не выдуманные уроки; RecordGoalOutcome валидирует каталог+литералы).
+       Исполнение не-idle кандидатов (selection готова) — с SE-5
 PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-спектр) + desktop awareness + DSL
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
