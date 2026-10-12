@@ -136,6 +136,21 @@ public sealed class MindRuntime
     }
 
     /// <summary>
+    /// CA-5 (PRG-3b — absence/return semantics): the user (re)connected — a REAL
+    /// presence event: the social drive rises (the desire for interaction is honest —
+    /// the return is observable). UserDisconnected ≠ TaskCancelled: the tasks are
+    /// Core-side and the supervisor watches them regardless of presence — the absence
+    /// never cancels work (architecturally guaranteed; documented in the ROADMAP).
+    /// </summary>
+    public void OnUserReturned()
+    {
+        lock (_gate)
+        {
+            _state.Adjust("social", +0.15);
+        }
+    }
+
+    /// <summary>
     /// The 1 Hz tick (driven by the host's MindRuntimeService): the boredom emerges
     /// from the measurable conditions via the existing MI-2 BoredomModel (never a
     /// timer); the drive levels land in the MindState; the short-term reactions decay

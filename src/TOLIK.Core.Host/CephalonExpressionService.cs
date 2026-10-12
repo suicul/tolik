@@ -149,6 +149,15 @@ public sealed class CephalonExpressionService(
         foreach (var (userId, snapshot) in gathered)
         {
             var previous = _previous.TryGetValue(userId, out var prev) ? prev : null;
+            if (previous is null)
+            {
+                // CA-5 (PRG-3b — absence/return): the (re)connected owner gets the
+                // proactive «what happened» summary; the mind's social drive rises (a
+                // REAL presence event). UserDisconnected ≠ TaskCancelled: the tasks
+                // live Core-side and the supervisor watches them regardless of presence.
+                mind.OnUserReturned();
+                hub.PublishToUser(userId, BuildPresenceReturnJson(mind.Journal.RenderRecent(TimeSpan.FromHours(1), now)));
+            }
             var lastPublished = _lastPublish.TryGetValue(userId, out var at) ? at : DateTimeOffset.MinValue;
             // The mind is ONE for the ONE TOLIK (identity-level, not per-user): its real
             // drives flow into every connected owner's expression (PLAN REFORM PRG-1a).
@@ -282,6 +291,16 @@ public sealed class CephalonExpressionService(
     }
 
     /// <summary>The fixed wire frame (the desktop/Android lanes consume EXACTLY this):
+    /// <summary>
+    /// CA-5 (PRG-3b): the return-presentation payload — a proactive «what happened»
+    /// summary pushed to the owner on their (re)connect. The summary comes from the
+    /// journal (privacy by construction: fixed kinds + generic summaries only — safe
+    /// for any authenticated reader). Unknown to a renderer = safely ignored.
+    /// </summary>
+    internal static string BuildPresenceReturnJson(string summary) =>
+        JsonSerializer.Serialize(new { kind = "presence_return", summary });
+
+    /// <summary>
     /// {"kind":"cephalon_expression","expression":{...camelCase...},"at":"<ISO-8601>"}.
     /// The expression fields are serialized EXPLICITLY — exactly the 16 contract
     /// parameters (the record's computed IsFinite diagnostic property must never leak
