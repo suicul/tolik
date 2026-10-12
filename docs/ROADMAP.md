@@ -74,6 +74,17 @@ PRG-1  Mind Activation: MI-3..MI-6 + MindState экспорт в host → цеф
        не выдуманные уроки; RecordGoalOutcome валидирует каталог+литералы).
        Исполнение не-idle кандидатов (selection готова) — с SE-5
 PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-спектр) + desktop awareness + DSL
+       — ЧАСТИЧНО DONE 12.10.2026 (754/754): **CE-3** (abc9277): VoiceSpectrumState —
+       реальный исходящий TTS-поток → 512-sample ring + hand-rolled radix-2 FFT
+       (ноль зависимостей) → амплитуда + полосы (low<500→оболочка, 500-2500→глаз,
+       2500-8000→частицы) → ExpressionState (были честные нули с CE-2); WAV-парсер
+       (RIFF/16-bit/mixdown stereo; MP3-fallback — честный skip, не мусор); EWMA-
+       сглаживание; честная тишина (~300ms → нули — паузы читаются как паузы);
+       5 тапов на всех исходящих голосовых путях (/voice/process, /voice/turn,
+       /voice/turn-stream ×2, simple-intents helper). Тело цефалона теперь движется
+       голосом TOLIK. Остаток: **CE-4** (desktop awareness: фокус/уведомления/
+       режимы Focus/Gaming детект — поверх CU-1/2 контрактов), **CE-5** (Expression
+       DSL: bounded/validated/sandboxed, версии, feedback)
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
