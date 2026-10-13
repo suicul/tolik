@@ -37,7 +37,10 @@ public enum AgentCapability
     RunOpenCode,
     PlaySound,
     /// <summary>Captures the screen (CU-1 foundation) — reads, never modifies; privacy-sensitive (§50).</summary>
-    CaptureScreen
+    CaptureScreen,
+    /// <summary>Installs a TOLIK self-update (D2 Repair Mode) — CRITICAL: the signed
+    /// artifact + the integrity verification + the MFA confirmation, always.</summary>
+    InstallTolikUpdate
 }
 
 public enum ToolRiskLevel
