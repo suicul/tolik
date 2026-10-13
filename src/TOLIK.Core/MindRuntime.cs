@@ -1,4 +1,4 @@
-namespace TOLIK.Core;
+﻿namespace TOLIK.Core;
 
 /// <summary>
 /// MindRuntime (docs/mind.md MI-0..2 + PLAN REFORM PRG-1a): TOLIK's ONE running mind —
@@ -20,6 +20,7 @@ public sealed class MindRuntime
 
     private DateTimeOffset _lastInteraction = DateTimeOffset.MinValue;
     private int _activeTasks;
+    private int _consecutiveFailures; // MI-7: the failure streak (the self-awareness — 3+ → the mind proactively surfaces it)
 
     // PRG-1b (MI-5 + MI-6): the operational journal (privacy by construction — no user
     // content ever enters it) and the transition-based emotion engine. Both thread-safe
@@ -118,6 +119,7 @@ public sealed class MindRuntime
             _curiosity.Register("satisfied");     // the drive's object is resolved
             SyncDrives();
             _journal.Record(MindJournalKind.TaskCompleted);
+            _consecutiveFailures = 0; // the success breaks the failure streak
         }
     }
 
@@ -134,6 +136,7 @@ public sealed class MindRuntime
             // MI-4: a failure raises the explicit uncertainty — something went
             // unexpectedly (a real observation, never a guess; decays in the tick).
             _uncertainty = Math.Clamp(_uncertainty + 0.20, 0.0, 1.0);
+            _consecutiveFailures++; // the failure streak (the self-awareness)
         }
     }
 
@@ -277,7 +280,10 @@ public sealed class MindRuntime
     /// over the recent journal window — REAL observations only, never invented lessons.
     /// «Как прошло recent время?» reads from this.
     /// </summary>
-    public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
+        /// <summary>The self-awareness: the mind NOTICES the failure pattern (3+ consecutive
+    /// failures) and proactively tells the owner — without being asked. Reset on success.</summary>
+    public bool ShouldSurfaceFailurePattern => _consecutiveFailures >= 3;
+public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
     {
         lock (_gate)
         {
