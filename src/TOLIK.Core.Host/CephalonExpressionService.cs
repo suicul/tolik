@@ -162,7 +162,19 @@ public sealed class CephalonExpressionService(
                 // REAL presence event). UserDisconnected ≠ TaskCancelled: the tasks
                 // live Core-side and the supervisor watches them regardless of presence.
                 mind.OnUserReturned();
-                hub.PublishToUser(userId, BuildPresenceReturnJson(mind.Journal.RenderRecent(TimeSpan.FromHours(1), now)));
+                var returnSummary = mind.Journal.RenderRecent(TimeSpan.FromHours(1), now);
+                // BOTH wire lanes, ONE event (mirrors the MI-7 proactive_mind pattern):
+                // the expression hub carries { kind: "presence_return" } (the desktop
+                // cephalon lane) and the events channel carries { type:
+                // "presence_return" } (the Android /events/ws lane — the return summary
+                // is exactly what a mobile user wants on reconnect).
+                hub.PublishToUser(userId, BuildPresenceReturnJson(returnSummary));
+                hub.PublishToUser(userId, JsonSerializer.Serialize(new
+                {
+                    type = "presence_return",
+                    summary = returnSummary,
+                    at = now.ToString("O", CultureInfo.InvariantCulture)
+                }));
             }
             // MI-7: the mind's self-awareness — the failure pattern (3+ consecutive
             // failures) surfaces ONCE per streak, through BOTH gates: the mind-side
