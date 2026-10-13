@@ -55,8 +55,10 @@ public sealed class ActivitySelector
 
     /// <summary>Selects ONE activity for the current drives. Deterministic given (drives, now, locked).
     /// LOCKED restricts to the safety-relevant candidates; idleOnly (the Emergency
-    /// Stop, Phase G) restricts to Idle alone — the stopped mind simply rests.</summary>
-    public ActivitySelection Select(IReadOnlyList<DriveState> drives, DateTimeOffset now, bool locked, bool idleOnly = false)
+    /// Stop, Phase G) restricts to Idle alone — the stopped mind simply rests.
+    /// userPresent (CA-5): when false, the autonomous activities get a utility boost
+    /// (the mind works independently while the owner is away — CA-5 absence semantics).</summary>
+    public ActivitySelection Select(IReadOnlyList<DriveState> drives, DateTimeOffset now, bool locked, bool idleOnly = false, bool userPresent = true)
     {
         ArgumentNullException.ThrowIfNull(drives);
         lock (_gate)
@@ -78,6 +80,10 @@ public sealed class ActivitySelector
                 var utility = candidate.Name == ActivityNames.Idle
                     ? IdleBaselineUtility(byName)
                     : candidate.DriveAffinities.Sum(a => byName.GetValueOrDefault(a, 0.0));
+                // CA-5 absence semantics: when the user is absent, the autonomous
+                // occupations get a utility boost (the mind works independently).
+                if (!userPresent && candidate.Name != ActivityNames.Idle)
+                    utility += 0.20;
                 if (!double.IsFinite(utility)) continue;
                 if (utility > best.Utility)
                 {
