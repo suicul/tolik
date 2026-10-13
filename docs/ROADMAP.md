@@ -176,6 +176,22 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         the --broker service launch, the Core→Agent→Broker chain) — the follow-up
         per the spike choice: NAMED PIPES confirmed
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
+       — ЧАСТИЧНО DONE 13.10.2026 (Foundation green; оркестратор): **RA-3**
+       (274a48b): RewardStore — bounded ring 256 RewardEvent(At/Type/Summary/
+       Source); **ANTI-REWARD-HACKING СТРУКТУРНО**: Source-provenance обязательна
+       (ArgumentException, не фильтр — TOLIK никогда не награждает себя без
+       реального источника), store без authority (рефлексия: ни один метод не
+       принимает/возвращает AutonomyDecision/SessionPrincipal — награды
+       ИНФОРМИРУЮТ, никогда не грантуют); Effort-vs-Result честно раздельно
+       (Achievement vs EffortAcknowledgement — проваленная работа получает усилие,
+       НИКОГДА фейковое достижение); **MI-7** (274a48b): ProactivePolicy — TOLIK
+       НИКОГДА не прерывает пользователя (5-мин тихое окно), дневной бюджет
+       жёсткий (default 6), приоритеты (SystemSignal достижимы, CuriosityShare
+       только при boredom>=0.5 и бюджете 2/3, всё прочее DEFAULT DENY — idle
+       валиден), locked глушит полностью; E2 gate — финальный, оба должны
+       разрешить. Остаток: **MI-8** (Self-model + Mind Inspector), **MI-9-seed**
+       (Genesis seed МЕХАНИЗМ — активация на церемонии), **RA-3 остальное**
+       (Cosmetic/Creative/SharedExperience типы — additive; Cephalon-интеграция)
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
 PRG-8  IP-3/5/7/8: identity-криптография + presence-переходы (миграционная готовность)
