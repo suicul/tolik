@@ -114,6 +114,19 @@ PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика не
        honest boundary: task-creating loop (mind→planner→authorization) ждёт
        governance E2/F — зависимость самого плана
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
+       — ЧАСТИЧНО DONE 13.10.2026 (811/811; оркестратор): **Phase G Emergency Stop**
+       (2c9a2f0): EmergencyStopState (владельческий soft kill-switch ≠ LOCKED —
+       управляемая пауза автономии; in-memory by design: рестарт = естественный
+       сброс); AutonomyPolicy: EmergencyStopped → НОВЫЕ privileged ops DENY
+       (Modify/Destructive/Critical, ВКЛЮЧАЯ pre-authorized rules — пауза
+       аутранки пре-авторизацию; только ограничение); READS ЖИВУТ (владелец
+       сохраняет канал chat/ask/resume); ум → Idle-only оккупации (остановленный
+       ум отдыхает — никогда не позирует); /emergency/stop + /emergency/resume
+       (owner-only, audited; stop паузит ВСЕ running-таски через существующий
+       lifecycle); /health + emergencyStopped. Остаток: **C** (Privilege Broker —
+       admin-token service + C0 IPC spike), **D2** (Repair Mode capabilities),
+       **E2** (Notifications reactive/proactive), **F** (Personality/Relationship
+       layer), **H** (File scopes per-op / NetworkCapability / Secret Access Layer)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
