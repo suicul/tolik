@@ -140,8 +140,16 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         wildcard subdomains; the rate gate per-host + global); the SECRET OPAQUE
         HANDLES (the string form is ALWAYS [secret:name] — structurally never the
         value; UnwrapValue = the executor explicit edge call; the declared slots
-        whitelist). Remainder: **C** (Privilege Broker), **D2** (Repair Mode),
-        **F** (Personality/Relationship layer)
+        whitelist). **D2 DONE (b2e95f3, 838/838, orchestrator)**: RecoveryRegistry
+        — the TYPED fixed five (voice-restart/tts-fallback/component-restart/db-
+        restore-SINGLE-SHOT/task-stuck→CA-2), each routing an EXISTING capability
+        (the authorization pipeline mandatory for every recovery action; extension
+        = a code change, never a runtime registration); RecoveryAttemptGate —
+        bounded attempts (2 → STOP → explain → ask; the verification resets; the
+        owner re-arms; the budgets never shared); InstallTolikUpdate — CRITICAL +
+        MFA + confirm, never background, NEVER self-invoked; UpdateIntegrityPolicy
+        — the SIGNED manifest mandatory (an unsigned blob NEVER installs, T13).
+        Remainder: **C** (Privilege Broker), **F** (Personality/Relationship layer)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
