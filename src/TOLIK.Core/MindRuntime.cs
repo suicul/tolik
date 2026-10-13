@@ -41,6 +41,12 @@ public sealed class MindRuntime
     private readonly GoalStore _goals = new();
     private double _uncertainty;
 
+    // CE-5 (PRG-2c): the expression-recipe DSL store — the declarative recipes
+    // (validated, versioned, provenance); the ACTIVE recipe's deltas blend into
+    // every composed expression (additively — the one-blended-expression principle).
+    private readonly RecipeStore _recipes = new();
+    public RecipeStore ExpressionRecipes => _recipes;
+
     /// <summary>TOLIK's operational journal («Чем занимался пока меня не было?» — mind.md §7).
     /// The entries contain ONLY fixed kinds + generic summaries: safe for any authenticated reader.</summary>
     public MindJournal Journal => _journal;

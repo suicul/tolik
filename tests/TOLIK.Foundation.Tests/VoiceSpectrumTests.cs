@@ -134,7 +134,7 @@ public sealed class VoiceSpectrumTests
         // The composer maps them: low → the shell, mid → the eye, high → the particles (§9).
         var converged = TOLIK.Core.Host.CephalonExpressionService.ComposeFor(
             new TOLIK.Core.Host.CephalonUserSnapshot(0, 0), locked: false, turnInFlight: true, connected: true,
-            new MindEmotions(0, 0, 0, 0), voice, previous: null, deltaSeconds: 1.0);
+            new MindEmotions(0, 0, 0, 0), voice, activeRecipe: null, previous: null, deltaSeconds: 1.0);
         Assert.True(converged.ShellDeformation > 0.3);  // the low band moves the shell
         Assert.True(converged.ParticleDensity > 0.3);    // the high band moves the particles
         Assert.True(converged.SpectrumIntensity > 0.5); // the amplitude drives the intensity

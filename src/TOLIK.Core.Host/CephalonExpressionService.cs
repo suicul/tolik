@@ -146,6 +146,9 @@ public sealed class CephalonExpressionService(
         // CE-3: the real outgoing TTS spectrum — ONE reading per tick (the singleton
         // voice; the honest zeros during the pauses are the spectrum's own rule).
         var voice = spectrum.Current(now);
+        // CE-5: the active DSL recipe — ONE reading per tick; its validated deltas
+        // blend additively into every composed expression (the one-blended principle).
+        var activeRecipe = mind.ExpressionRecipes.ActiveRecipe;
         foreach (var (userId, snapshot) in gathered)
         {
             var previous = _previous.TryGetValue(userId, out var prev) ? prev : null;
@@ -162,7 +165,7 @@ public sealed class CephalonExpressionService(
             // The mind is ONE for the ONE TOLIK (identity-level, not per-user): its real
             // drives flow into every connected owner's expression (PLAN REFORM PRG-1a).
             var emotions = mind.ExpressionEmotions(now);
-            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, emotions, voice, previous, deltaSeconds);
+            var output = ComposeFor(snapshot, locked, voiceTurns.HasInFlightTurn(userId), connected: true, emotions, voice, activeRecipe, previous, deltaSeconds);
 
             _previous[userId] = output;
             if (!ShouldPublish(previous, output, now - lastPublished, _heartbeat)) continue;
@@ -244,12 +247,17 @@ public sealed class CephalonExpressionService(
             Locked: locked);
     }
 
-    /// <summary>Per-user composition: the existing pure composer does ALL the math.</summary>
+    /// <summary>Per-user composition: the existing pure composer does ALL the math.
+    /// The active DSL recipe (CE-5) blends ADDITIVELY into the state pre-composer —
+    /// another influence, never an override; a null recipe changes nothing.</summary>
     internal static ExpressionOutput ComposeFor(
         CephalonUserSnapshot snapshot, bool locked, bool turnInFlight, bool connected,
-        MindEmotions emotions, VoiceLevels? voice, ExpressionOutput? previous, double deltaSeconds) =>
+        MindEmotions emotions, VoiceLevels? voice, ExpressionRecipe? activeRecipe,
+        ExpressionOutput? previous, double deltaSeconds) =>
         ExpressionComposer.Compose(
-            ToExpressionState(snapshot, locked, turnInFlight, connected, emotions, voice).Normalized(),
+            RecipeApplication.Apply(
+                ToExpressionState(snapshot, locked, turnInFlight, connected, emotions, voice),
+                activeRecipe).Normalized(),
             previous, deltaSeconds);
 
     /// <summary>

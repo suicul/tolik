@@ -208,6 +208,50 @@ app.MapGet("/mind/journal", async (HttpContext context, IdentityService identity
         entries = entries.Select(e => new { at = e.At, kind = e.Kind, summary = e.Summary })
     });
 });
+// Expression recipes (CE-5 — PLAN REFORM PRG-2c, директива §14): the declarative
+// expression DSL. The recipes are DATA — validated (the fixed field whitelist +
+// the bounded deltas), versioned (strictly increasing per id), provenance-required.
+// They RENDER (the additive deltas blend into the composed expression); they never
+// act; the LLM may PROPOSE — the deterministic validation decides; nothing executes
+// anywhere (bounded, validated, safe).
+app.MapPost("/mind/expression/recipe", async (HttpContext context, IdentityService identity, MindRuntime mind, ExpressionRecipeRequest request, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (request?.Deltas is not { Count: > 0 } deltas)
+        return Results.BadRequest(new { errors = new[] { "deltas: at least one adjustment required." } });
+    var recipe = new ExpressionRecipe(
+        request.Id ?? string.Empty, request.Version, request.Name ?? string.Empty,
+        request.Context ?? string.Empty, request.Source ?? string.Empty, request.Confidence,
+        deltas.Select(d => new ExpressionRecipeDelta(d.Field ?? string.Empty, d.Delta)).ToList());
+    var validation = mind.ExpressionRecipes.Add(recipe);
+    return validation.IsOk
+        ? Results.Ok(new { stored = true, id = recipe.Id, version = recipe.Version })
+        : Results.BadRequest(new { errors = validation.Errors });
+});
+app.MapPost("/mind/expression/recipe/{id}/activate", async (string id, HttpContext context, IdentityService identity, MindRuntime mind, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    return mind.ExpressionRecipes.TryActivate(id)
+        ? Results.Ok(new { active = true, id })
+        : Results.NotFound(new { error = "recipe_not_found" });
+});
+app.MapPost("/mind/expression/recipe/deactivate", async (HttpContext context, IdentityService identity, MindRuntime mind, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    mind.ExpressionRecipes.Deactivate();
+    return Results.Ok(new { active = false });
+});
+app.MapPost("/mind/expression/recipe/{id}/feedback", async (string id, HttpContext context, IdentityService identity, MindRuntime mind, RecipeFeedbackRequest request, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    return mind.ExpressionRecipes.RecordFeedback(id, request?.Positive == true)
+        ? Results.Ok(new { recorded = true, id, positive = request?.Positive == true })
+        : Results.NotFound(new { error = "recipe_not_found" });
+});
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -3140,6 +3184,9 @@ public sealed record FileToolRequest(string Path);
 public sealed record PlanRequest(string? Request, int MaxSteps = 8, int BudgetSeconds = 300, string[]? Steps = null, bool AutoPlan = false);
 public sealed record MemoryRequest(MemoryScope Scope, string? Content, string? Source, double Confidence = 1, string? Origin = null);
 public sealed record PersonRequest(string? Name, string? Relationship, MemoryScope Scope = MemoryScope.Shared);
+public sealed record ExpressionRecipeDeltaRequest(string? Field, double Delta);
+public sealed record ExpressionRecipeRequest(string? Id, int Version, string? Name, string? Context, string? Source, double Confidence, List<ExpressionRecipeDeltaRequest>? Deltas);
+public sealed record RecipeFeedbackRequest(bool? Positive);
 public sealed record HumorRequest(MemoryScope Scope, string? Content, string? Source);
 public sealed record PersonalityRequest(string? Tone, string? Style, bool UseHumor = true);
 public sealed record FamilyLoreRequest(string? Content);
