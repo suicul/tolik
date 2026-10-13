@@ -149,7 +149,6 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         owner re-arms; the budgets never shared); InstallTolikUpdate — CRITICAL +
         MFA + confirm, never background, NEVER self-invoked; UpdateIntegrityPolicy
         — the SIGNED manifest mandatory (an unsigned blob NEVER installs, T13).
-        — the SIGNED manifest mandatory (an unsigned blob NEVER installs, T13).
         **F DONE (50dbc34, 844/844, orchestrator)**: PersonalityPhrasing — the
         HUMAN phrasings over the ALREADY-MADE verdicts (Personality ≠
         Authorization, треб. #16/#17): Deny «за пределами полномочий, не
