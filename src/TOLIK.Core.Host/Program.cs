@@ -215,6 +215,43 @@ app.MapGet("/mind/journal", async (HttpContext context, IdentityService identity
         entries = entries.Select(e => new { at = e.At, kind = e.Kind, summary = e.Summary })
     });
 });
+// Mind Inspector (MI-8 — PLAN REFORM PRG-5b): the honest self-model — the mind
+// state, the mood, the expression, the structural limits. The owner sees EXACTLY
+// what the mind is: nothing fabricated, nothing hidden.
+app.MapGet("/mind/state", async (HttpContext context, IdentityService identity, MindRuntime mind, TOLIK.Infrastructure.Authorization.EmergencyStopState emergency, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var snapshot = mind.Snapshot();
+    var mood = mind.MoodSnapshot();
+    var emotions = mind.ExpressionEmotions(DateTimeOffset.UtcNow);
+    var recipes = mind.ExpressionRecipes.List().Select(r => new
+    {
+        r.Recipe.Id, r.Recipe.Name, r.Recipe.Confidence,
+        r.UsageCount, r.FeedbackPositive, r.FeedbackNegative
+    }).ToList();
+    return Results.Ok(new
+    {
+        status = mind.GenesisSeed.Status.ToString(),
+        mind = new
+        {
+            boredom = snapshot.Boredom, curiosity = snapshot.Curiosity,
+            frustration = snapshot.Frustration, satisfaction = snapshot.Satisfaction,
+            socialDrive = snapshot.SocialDrive, cognitiveLoad = snapshot.CognitiveLoad,
+            activityLevel = snapshot.ActivityLevel, attentionTarget = snapshot.AttentionTarget
+        },
+        mood = new { mood.Valence, mood.Arousal, mood.Momentum },
+        expression = new
+        {
+            emotions.Curiosity, emotions.Frustration, emotions.Confidence,
+            emotions.Attention, emotions.Uncertainty
+        },
+        activeRecipe = mind.ExpressionRecipes.ActiveRecipe?.Id,
+        recipes,
+        limits = SelfModel.StructuralLimits,
+        emergencyStopped = emergency.IsStopped
+    });
+});
 // Expression recipes (CE-5 — PLAN REFORM PRG-2c, директива §14): the declarative
 // expression DSL. The recipes are DATA — validated (the fixed field whitelist +
 // the bounded deltas), versioned (strictly increasing per id), provenance-required.
