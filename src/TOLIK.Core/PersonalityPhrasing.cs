@@ -16,11 +16,17 @@ namespace TOLIK.Core;
 public static class PersonalityPhrasing
 {
     /// <summary>The human phrasing of a DENY — the deterministic decision UNDERNEATH;
-    /// the personality never softens, never reinterprets, never bypasses the verdict.</summary>
-    public static string Deny(string resource, string declaredRisk)
+    /// the personality never softens, never reinterprets, never bypasses the verdict.
+    /// The `amusement` tone modifier (0 = neutral, > 0 = playful) comes from the mind's
+    /// active recipe — it changes the TONE, never the DECISION (Personality ≠
+    /// Authorization: the phrasing wraps, the boundary stands).</summary>
+    public static string Deny(string resource, string declaredRisk, double amusement = 0.0)
     {
         if (string.IsNullOrWhiteSpace(resource)) throw new ArgumentException("Resource is required.", nameof(resource));
-        return $"Не, «{resource}» — за пределами моих полномочий, и это не обсуждается. (Риск: {declaredRisk}.)";
+        var basePhrase = $"Не, «{resource}» — за пределами моих полномочий, и это не обсуждается.";
+        return amusement > 0.3
+            ? $"{basePhrase} 😏 (Риск: {declaredRisk}.)"
+            : $"{basePhrase} (Риск: {declaredRisk}.)";
     }
 
     /// <summary>

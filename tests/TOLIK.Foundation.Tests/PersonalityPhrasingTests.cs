@@ -28,6 +28,21 @@ public sealed class PersonalityPhrasingTests
     }
 
     [Fact]
+    public void Amusement_changes_the_tone_never_the_boundary()
+    {
+        // Personality ≠ Authorization: the amusement recipe changes the TONE, never the DECISION.
+        var neutral = PersonalityPhrasing.Deny("C:\\Windows\\System32", "Destructive", amusement: 0.0);
+        var playful = PersonalityPhrasing.Deny("C:\\Windows\\System32", "Destructive", amusement: 0.5);
+        Assert.Contains("не обсуждается", neutral);    // the firm boundary in BOTH
+        Assert.Contains("не обсуждается", playful);    // the firm boundary in BOTH
+        Assert.Contains("😏", playful);                 // the playful tone marker
+        Assert.DoesNotContain("😏", neutral);           // the neutral tone has no emoji
+        // The risk naming is honest in both.
+        Assert.Contains("Destructive", neutral);
+        Assert.Contains("Destructive", playful);
+    }
+
+    [Fact]
     public void Confirmation_requests_are_human_never_corporate()
     {
         var phrasing = PersonalityPhrasing.ConfirmationRequest(
