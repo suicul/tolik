@@ -133,8 +133,15 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         rate-limit per-category + global (TOLIK_NOTIFY_*, honest drops, rejects
         never burn the budget); the supervisor stalls + the reminders wired
         through the gate (the repeat spam capped). Notifications INFORM — never
-        authorize. Remainder: **C**, **D2**, **F** (Personality/Relationship
-       layer), **H** (File scopes per-op / NetworkCapability / Secret Access Layer)
+        authorize. **H DONE (7085547, 830/830, orchestrator)**: the per-op file
+        tiers (посмотреть ≠ удалить: Read/Write = the roots; Move/Delete — the
+        protected .tolik/.env/.git NEVER; Execute = the executable extensions
+        only); the network allowlist (empty = localhost-only fail-closed; the
+        wildcard subdomains; the rate gate per-host + global); the SECRET OPAQUE
+        HANDLES (the string form is ALWAYS [secret:name] — structurally never the
+        value; UnwrapValue = the executor explicit edge call; the declared slots
+        whitelist). Remainder: **C** (Privilege Broker), **D2** (Repair Mode),
+        **F** (Personality/Relationship layer)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
