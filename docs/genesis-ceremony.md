@@ -20,7 +20,7 @@ Preflight (все гейты) → identity row + Genesis audit event В ОДНО
 
 | # | Действие | Проверка |
 |---|---|---|
-| 1.1 | Бэкап валидирован | `backups/tolik-backup-pre-genesis.dump` + SHA-256; restore-тест пройден на чистой цели (03.10.2026 — FACT; при обновлении данных — снять свежий: `.\scripts\backup-postgres.ps1`) |
+| 1.1 | Бэкап валидирован | `backups/tolik-backup-pre-genesis-fresh.dump` + SHA-256 (`9e1df711…`), снят **14.10.2026**; restore-тест пройден в тот же день: дамп восстановлен в отдельную scratch-БД (15 таблиц, pg_restore exit 0), scratch удалена. Скрипт: `.\scripts\backup-postgres.ps1` (требует `pwsh -ExecutionPolicy Bypass -File`) |
 | 1.2 | Тесты зелёные | `dotnet test TOLIK.sln` — 0 провалов (авторизационная матрица — часть preflight-доверия) |
 | 1.3 | Память чиста от development | 0 строк `origin=development` вне тест-фикстур (проверено 03.10.2026; после — не запускать dev-сессии в production DB) |
 | 1.4 | MFA-устройство готово | приложение-аутентификатор установлено |
