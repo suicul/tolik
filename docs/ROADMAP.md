@@ -82,9 +82,16 @@ PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-сп�
        сглаживание; честная тишина (~300ms → нули — паузы читаются как паузы);
        5 тапов на всех исходящих голосовых путях (/voice/process, /voice/turn,
        /voice/turn-stream ×2, simple-intents helper). Тело цефалона теперь движется
-       голосом TOLIK. Остаток: **CE-4** (desktop awareness: фокус/уведомления/
-       режимы Focus/Gaming детект — поверх CU-1/2 контрактов), **CE-5** (Expression
-       DSL: bounded/validated/sandboxed, версии, feedback)
+        голосом TOLIK. **CE-4 DONE (084457e, 789/789, оркестратор):** Desktop
+        Awareness — авто-режимы присутствия: ModeArbitration (ЧИСТЫЙ; ручной выбор
+        владельца в трее НЕПРИКОСНОВЕНЕН; Emergency/Hidden/Focus — owner-only,
+        никогда авто) + DesktopWatcher (ТОЛЬКО безопасные факты: имя процесса
+        переднего плана + fullscreen-прокси; НИКОГДА контент окон — приватность
+        by-construction; TOLIK_GAME_PROCESSES паттерн M8) + App wiring (2s poll →
+        арбитраж → SetMode(auto:true); ручной клик пинит). Fullscreen игра → Gaming;
+        другой fullscreen → Presentation; конец → Normal. Остаток: **CE-5**
+        (Expression DSL: bounded/validated/sandboxed, версии, feedback); реакция на
+        курсор/уведомления — расширенная awareness позже
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
        — ЧАСТИЧНО DONE 12.10.2026 (763/763; оркестратором, параллельно с des-7):
        **CA-2** (92f4e5c): TaskSupervisorService — RUNNING-таск watchdog: живость =
