@@ -102,17 +102,17 @@ PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-сп�
         **PRG-2 COMPLETE (CE-3+CE-4+CE-5).** Реакция на курсор/уведомления —
         расширенная awareness позже
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
-       — ЧАСТИЧНО DONE 12.10.2026 (763/763; оркестратором, параллельно с des-7):
-       **CA-2** (92f4e5c): TaskSupervisorService — RUNNING-таск watchdog: живость =
-       последний lifecycle-event (EventPublished-трекинг) + CreatedAt как честный
-       persisted-пол (рестарт НИКОГДА не даёт ложный stall — unknown = fresh, §50);
-       bounded-лестница (L1 mind замечает (frustration/uncertainty/journal «Задача
-       приостановилась») → L2 WS-уведомление владельцу (per-user routing) → L3 PAUSE
-       через существующий lifecycle (stop + preserve + ask; НИКОГДА auto-cancel));
-       счётчик сбрасывается при возврате активности; TOLIK_CA_* fail-closed; bounded
-       memory; §40 loop never dies silently. Остаток: **CA-5** (absence/return:
-       UserDisconnected ≠ TaskCancelled + презентация возвращения), **CA-7**
-       (continuous engine: Mind + TaskSupervisor интеграция, много целей, attention)
+       — ✅ **COMPLETE 12-13.10.2026 (804/804; оркестратор)**: **CA-2** (92f4e5c):
+       TaskSupervisorService — RUNNING-таск watchdog (живость = lifecycle-события +
+       CreatedAt честный пол; bounded-лестница L1 mind/L2 notify/L3 PAUSE — никогда
+       auto-cancel); **CA-5** (3dfcb2c): return-семантика (UserDisconnected ≠
+       TaskCancelled архитектурно; presence_return сводка при reconnect; социальный
+       бамп); **CA-7** (cb0b7d6): continuous engine v1 — СОБРАННЫЙ loop (ум 1 Hz →
+       занятия → цели → attention-арбитраж → supervisor) + **ИСПОЛНЯЮЩИЙСЯ
+       SystemReview** (оккупация производит детерминированный отчёт → ReviewResult;
+       no-fake инвариант: review существует только при реальном SystemReview);
+       honest boundary: task-creating loop (mind→planner→authorization) ждёт
+       governance E2/F — зависимость самого плана
 PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety-механика)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
