@@ -89,9 +89,18 @@ PRG-2  CE-3/CE-4/CE-5: голос-реактивный цефалон (FFT-сп�
         переднего плана + fullscreen-прокси; НИКОГДА контент окон — приватность
         by-construction; TOLIK_GAME_PROCESSES паттерн M8) + App wiring (2s poll →
         арбитраж → SetMode(auto:true); ручной клик пинит). Fullscreen игра → Gaming;
-        другой fullscreen → Presentation; конец → Normal. Остаток: **CE-5**
-        (Expression DSL: bounded/validated/sandboxed, версии, feedback); реакция на
-        курсор/уведомления — расширенная awareness позже
+        другой fullscreen → Presentation; конец → Normal. **CE-5 DONE (4750df9,
+        801/801, оркестратор): Expression DSL** — декларативные рецепты выражений:
+        «сухая насмешка» = bounded parameter DELTAS (фиксированный whitelist полей
+        ExpressionState, |delta| ≤ 0.5, provenance обязательна, версии строго
+        монотонные, capacity 128 — full REJECTS); LLM может ПРЕДЛАГАТЬ (данные) —
+        детерминированная валидация решает; НИЧЕГО не исполняется нигде (bounded/
+        validated/safe, §14); применение = ADDITIVE blend пре-композер (принцип
+        одного смешанного выражения; defense-in-depth в применении); store с
+        usage/feedback статистикой (сигнал для CE-6 habit-formation, никогда
+        permission); 4 auth-эндпоинта (store/activate/deactivate/feedback).
+        **PRG-2 COMPLETE (CE-3+CE-4+CE-5).** Реакция на курсор/уведомления —
+        расширенная awareness позже
 PRG-3  CA-2/CA-5/CA-7: TaskSupervisor + continuous engine (механика непрерывности)
        — ЧАСТИЧНО DONE 12.10.2026 (763/763; оркестратором, параллельно с des-7):
        **CA-2** (92f4e5c): TaskSupervisorService — RUNNING-таск watchdog: живость =
