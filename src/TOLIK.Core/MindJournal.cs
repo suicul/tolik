@@ -11,6 +11,7 @@ public static class MindJournalKind
     public const string ActivitySelected = "ActivitySelected";
     public const string GoalOutcome = "GoalOutcome";
     public const string TaskStalled = "TaskStalled";
+    public const string ReviewResult = "ReviewResult";
 }
 
 /// <summary>One operational journal record: when, what kind, the deterministic generic summary.</summary>
@@ -49,6 +50,20 @@ public sealed class MindJournal
         lock (_gate)
         {
             _entries.Enqueue(new MindJournalEntry(at ?? DateTimeOffset.UtcNow, kind, summary));
+            while (_entries.Count > Capacity) _entries.Dequeue();
+        }
+    }
+
+    /// <summary>Records a review result (CA-7): the summary comes from the MindRuntime's
+    /// own ReflectionSummary — deterministic statistics over the journal's own counts
+    /// (by-construction safe: no user content can enter). INTERNAL: only the mind
+    /// records reviews — the structural privacy holds (§19/§50).</summary>
+    internal void RecordReview(string summary, DateTimeOffset? at = null)
+    {
+        if (string.IsNullOrWhiteSpace(summary)) throw new ArgumentException("Review summary is required.", nameof(summary));
+        lock (_gate)
+        {
+            _entries.Enqueue(new MindJournalEntry(at ?? DateTimeOffset.UtcNow, MindJournalKind.ReviewResult, summary.Trim()));
             while (_entries.Count > Capacity) _entries.Dequeue();
         }
     }

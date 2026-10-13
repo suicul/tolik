@@ -218,6 +218,13 @@ public sealed class MindRuntime
                     // (bounded, deduped per type — the occupations, not the noise).
                     if (selection.Activity != ActivityNames.Idle)
                         _goals.UpsertFromActivity(selection.Activity, now);
+                    // CA-7 (PRG-3c): the SystemReview occupation EXECUTES — the
+                    // deterministic system review (the task/goal outcome statistics)
+                    // is computed and journaled: the occupation produces a real result,
+                    // never a pose. The ReviewResult entry is by-construction safe
+                    // (the statistics over the journal's own counts — no user content).
+                    if (selection.Activity == ActivityNames.SystemReview)
+                        _journal.RecordReview(ReflectionSummary(TimeSpan.FromHours(1), now), now);
                 }
             }
         }
