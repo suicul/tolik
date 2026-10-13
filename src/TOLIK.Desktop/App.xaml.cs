@@ -39,6 +39,8 @@ public partial class App : Application
     private readonly Dictionary<PresenceMode, WinForms.ToolStripMenuItem> _modeItems = new();
 
     private PresenceMode _mode = PresenceMode.Normal;
+    private bool _modeIsAuto = true; // CE-4: the auto-set flag — the tray's manual choice pins and is never overridden
+    private System.Windows.Threading.DispatcherTimer? _desktopWatcher; // CE-4: the desktop-awareness poll
     private bool _interactive;
     private bool _debugOverlay;
 
@@ -59,14 +61,41 @@ public partial class App : Application
 
         _tray = BuildTray();
 
-        SetMode(PresenceMode.Normal);
+        SetMode(PresenceMode.Normal, auto: true);
         SetInteractive(false);
 
         StartCoreLink();
+        StartDesktopWatcher();
+    }
+
+    /// <summary>CE-4 (PLAN REFORM PRG-2b): the desktop-awareness poll — the SAFE facts
+    /// only (the foreground process name + the fullscreen proxy; NO window content,
+    /// NO text, NO screenshots — директива §12/§50). The auto-switching never touches a
+    /// mode the owner chose manually: ModeArbitration treats the manual choice as
+    /// sacred. Fullscreen GAME → Gaming (quiet, click-through); other fullscreen →
+    /// Presentation; back to Normal when it ends.</summary>
+    private void StartDesktopWatcher()
+    {
+        _desktopWatcher = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2),
+        };
+        _desktopWatcher.Tick += (_, _) =>
+        {
+            var observation = TOLIK.Desktop.Presence.DesktopWatcher.Observe();
+            var game = TOLIK.Desktop.Presence.DesktopWatcher.IsGameProcess(
+                observation.ProcessName, Environment.GetEnvironmentVariable("TOLIK_GAME_PROCESSES"));
+            var next = TOLIK.Desktop.Presence.ModeArbitration.Decide(_mode, _modeIsAuto, observation.Fullscreen, game);
+            if (next is not null)
+                SetMode(next.Value, auto: true);
+        };
+        _desktopWatcher.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _desktopWatcher?.Stop();
+        _desktopWatcher = null;
         _linkCts?.Cancel();
         _coreLink = null;
         _linkTokens?.Dispose();
@@ -215,10 +244,11 @@ public partial class App : Application
 
     // ---------- state changes ----------
 
-    private void SetMode(PresenceMode mode)
+    private void SetMode(PresenceMode mode, bool auto = false)
     {
         _mode = mode;
-        ModePolicy policy = ModePolicyTable.GetSafe(mode);
+        _modeIsAuto = auto; // CE-4: the tray's default call (auto:false) pins the choice;
+        ModePolicy policy = ModePolicyTable.GetSafe(mode); // the watcher's auto:true stays overridable
 
         if (_window is not null)
         {
