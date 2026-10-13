@@ -51,6 +51,11 @@ public sealed class MindRuntime
     /// The entries contain ONLY fixed kinds + generic summaries: safe for any authenticated reader.</summary>
     public MindJournal Journal => _journal;
 
+    // MI-9 (PRG-5b): the Genesis seed — the personality/values MECHANISM (the data
+    // loads pre-ceremony; the ACTIVATION flips only at the ceremony's touchpoint).
+    private readonly GenesisSeedRuntime _genesisSeed = new();
+    public GenesisSeedRuntime GenesisSeed => _genesisSeed;
+
     /// <summary>The slow mood layer (MI-5): valence/arousal/momentum from the real transitions.</summary>
     public MoodState MoodSnapshot() => _emotions.Mood;
 

@@ -95,6 +95,8 @@ public sealed class ActivitySelector
     private static double IdleBaselineUtility(IReadOnlyDictionary<string, double> byName) =>
         Math.Max(0.15, byName.GetValueOrDefault(DriveNames.Rest, 0.0)); // idle is always a plausible result
 
-    private bool IsCoolingDown(string activity, DateTimeOffset now) =>
+    /// <summary>The anti-loop cooldown check — READ-ONLY for the Inspector (never
+    /// mutates; the real selection's cooldowns are untouched by a trace).</summary>
+    internal bool IsCoolingDown(string activity, DateTimeOffset now) =>
         _lastSelected.TryGetValue(activity, out var at) && now - at < Cooldown;
 }
