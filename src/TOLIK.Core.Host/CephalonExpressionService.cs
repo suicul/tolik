@@ -357,7 +357,14 @@ public sealed class CephalonExpressionService(
         }
 
         // 4. Send + budget + journal (the journal entry is already recorded by the consume).
+        // TWO wire shapes, ONE event: the expression hub carries { kind: "proactive" }
+        // (the desktop cephalon lane) and the events channel carries { type:
+        // "proactive_mind" } (the Android /events/ws lane — AN-2 notifier pattern).
+        // The payloads target their lane's clients; a client subscribed to both
+        // endpoints sees the same surface twice — the honest duplication of one event.
+        var at = now.ToString("O", CultureInfo.InvariantCulture);
         hub.PublishToUser(userId, BuildProactiveJson(message));
+        hub.PublishToUser(userId, JsonSerializer.Serialize(new { type = "proactive_mind", text = message, at }));
         _proactiveDay = (day, proactivesToday + 1);
         logger.LogInformation("Proactive failure-pattern surfaced to {User} ({Today}/{Budget}).",
             userId, proactivesToday + 1, ProactivePolicy.DailyBudget);

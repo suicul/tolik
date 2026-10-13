@@ -96,6 +96,22 @@ public sealed class FailurePatternSurfaceTests
     }
 
     [Fact]
+    public void Failure_streak_is_observable_for_the_inspector()
+    {
+        var mind = new MindRuntime();
+        Assert.Equal(0, mind.FailureStreak);
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        Assert.Equal(2, mind.FailureStreak);
+        mind.OnTaskFailed();
+        Assert.Equal(3, mind.FailureStreak);
+        Assert.True(mind.ShouldSurfaceFailurePattern); // the streak the mind NOTICED is pending
+        mind.OnTaskCompleted();
+        Assert.Equal(0, mind.FailureStreak); // the success resets the streak the mind sees
+        Assert.False(mind.ShouldSurfaceFailurePattern);
+    }
+
+    [Fact]
     public void E2_gate_carries_the_failure_surface_through_the_whitelist()
     {
         var gate = new NotificationGate();

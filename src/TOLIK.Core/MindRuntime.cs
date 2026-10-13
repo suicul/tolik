@@ -283,6 +283,10 @@ public sealed class MindRuntime
     /// ONCE PER STREAK (never spam every tick); the success breaks the streak and re-arms.</summary>
     public bool ShouldSurfaceFailurePattern => _consecutiveFailures >= 3 && !_failurePatternSurfaced;
 
+    /// <summary>The observable failure streak (the self-awareness diagnostics — the
+    /// Inspector shows what the mind sees about its own recent outcomes).</summary>
+    public int FailureStreak => _consecutiveFailures;
+
     /// <summary>Consumes the pending failure-pattern surface (once per streak): returns the
     /// honest deterministic message with the streak count, or null when nothing is pending.
     /// The caller must still pass the message through the mind-side ProactivePolicy and the

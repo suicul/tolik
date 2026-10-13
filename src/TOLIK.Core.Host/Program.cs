@@ -248,6 +248,14 @@ app.MapGet("/mind/state", async (HttpContext context, IdentityService identity, 
         },
         activeRecipe = mind.ExpressionRecipes.ActiveRecipe?.Id,
         recipes,
+        selfAwareness = new
+        {
+            // MI-7: what the mind sees about its own recent outcomes (the honest
+            // self-model: the streak the mind NOTICED and whether a proactive
+            // surface is still pending for it).
+            failureStreak = mind.FailureStreak,
+            failurePatternPending = mind.ShouldSurfaceFailurePattern
+        },
         limits = SelfModel.StructuralLimits,
         emergencyStopped = emergency.IsStopped
     });
