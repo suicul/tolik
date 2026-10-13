@@ -237,9 +237,52 @@ PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лабора
        development pipeline через dev-agents), **SE-6** (continuous loop), **SE-7**
        (Cephalon personality integration)
 PRG-8  IP-3/5/7/8: identity-криптография + presence-переходы (миграционная готовность)
+       — ЧАСТИЧНО DONE 13.10.2026 (909/909; оркестратор): **IP-3** (27e1a70):
+       IdentityKeyHierarchy — формальная 4-ключевая модель (Identity/Signing/
+       Session/Device), Sign/VerifyWithSigningKey/ExportPublicKeys; **IP-5**
+       (91c3772): PresenceTransitionEngine — формальный handoff (оба подтверждают,
+       по одному за раз, expiry). Остаток: IP-5/7/8 миграционные части (VPS)
 PRG-9  MM-4..6 + AN-P5/AN-P7: мультимодальность + мобильные органы
 ```
 Статус PRG-фаз отмечается в треках ниже по мере реализации.
+
+### Финал pre-Genesis сессии (13-14.10.2026, 924/924; оркестратор)
+
+Детерминированная pre-Genesis поверхность **насыщена**. Замыкающие коммиты:
+
+- **Personality tone modifier** (497ce43): amusement-рецепт меняет ТОН фразы
+  (😏 при > 0.3) — граница «не обсуждается» неизменна (Personality ≠
+  Authorization).
+- **Capstone integration test**: полный цикл автономии end-to-end (события →
+  ум → занятие → настроение → журнал → рефлексия → proactive gate).
+- **CA-5 absence wiring** (263d9ab): ActivitySelector userPresent
+  (взаимодействие < 30 мин) — ум предпочитает автономные занятия, пока
+  владельца нет.
+- **Cephalon design source export** (2fde082): параметрическая сетка → JSON
+  контракт (LOD-лестница + по частям topology/placement) — ONE DESIGN SOURCE
+  для Android/VR: тот же JSON → то же тело; +9 тестов (индексы в границах,
+  детерминизм, монотонность LOD).
+- **MI-7 closed loop** (b7f4311): 3+ провала подряд →
+  ConsumeFailurePatternSurface (один раз на серию, ре-арм на успехе) → ОБА
+  гейта (mind-side ProactivePolicy: тихое окно/бюджет/LOCKED; E2
+  NotificationGate: whitelist + rate) → владелец. Ум ЗАМЕЧАЕТ и ДОНОСИТ;
+  гейт-отказ держит surface pending; E2-дроп — честная потеря (журнал уже
+  несёт всё).
+- **Голос ума на оба wire-канала** (dfbf0db): expression hub
+  `{kind:"proactive"}` (десктоп) + events WS `{type:"proactive_mind"}`
+  (Android AN-2-паттерн); `/mind/state` gains
+  `selfAwareness {failureStreak, failurePatternPending}`. Десктопная
+  презентация (оверлей у цефалона) — в работе (des-8).
+- **Genesis ceremony runbook** (7df4aa8): `docs/genesis-ceremony.md` —
+  операционный чеклист владельца, сверен с кодом (dev-token off первым —
+  дрейф флага; MFA; seed pre-ceremony; голос Phase 2 ≥4/5; форма запроса;
+  аттестация бэкапа — единственный гейт на доверии владельца; 409/503
+  семантика).
+
+**Осталось (только с владельцем / внешние зависимости):** Genesis церемония
+(см. runbook), Android SDK build, десктопная презентация голоса ума (des-8),
+CU-провайдеры (UIA/OCR), SE-5/6 (dev-agents), IP-5/7/8 миграционные части
+(VPS), MM-4..6 (vision-провайдер), полный Privilege Broker Phase C (SCM).
 
 ## Model policy (owner-approved 30.09.2026, cloud keys live since)
 
