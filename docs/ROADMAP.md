@@ -190,6 +190,21 @@ redaction). Остаток: **CE-3** (реальный TTS спектр: amplitu
 нулевые пока voice-service не отдаст телеметрию), CE-4 (desktop awareness),
 **Блокер снят:** прежний stall designer-линии (04.10, три подряд, ноль записей)
 не повторился — свежая сессия работает.
+**CE-1b: ЦЕФАЛОН В 3D (директива владельца 13.10.2026 «более объемным, попробовать
+3д» + «скобы видны — убрать»; commit 891b0f7, 774/774):** софтверный 3D-рендерер
+(НИКОГДА GPU — RTX 3060 свободна для игр; ноль новых зависимостей): V3/Mat4 +
+процедурный параметрический меш (CephalonMeshBuilder — ЕДИНСТВЕННЫЙ дизайн-источник
+для VR/Android 3D-портов, docs/VR.md) + Cephalon3DPipeline (анимация вершин →
+перспектива → backface culling → key-light flat shading с эмиссией → depth-sliced
+painter's algorithm; детерминированный, allocation-free hot path). Тело: кольца
+arc-band на РЕАЛЬНЫХ z-глубинах с независимым вращением; глаз = сфера с гранёным
+iris + офсетный зрачок + glint; ПОЛУСФЕРИЧЕСКИЕ шторки-веки (механический блинк =
+настоящая 3D-окклюзия); 3D-орбиты энергии. **Скобы УБРАНЫ** → 2-3 дуговых сегмента
+внешнего кольца (естественная часть тела). Composition: −496/+161 — 3D draw-list →
+WPF кисти; LOD-лестница из FrameGovernor; все честные состояния/ум/спектр без
+изменений контракта. des-7 умер mid-write (провайдер-таймаут) — оркестратор
+добыл: 2 компиляционных фикса + InternalsVisibleTo + 8 тестов (детерминизм/
+painter's ordering/finited bounds/fail-closed/LOD/motes).
 
 ## Track 4 — Memory++ (biggest quality lever after voice)
 1. pgvector + embeddings (associative recall; Postgres ready).
