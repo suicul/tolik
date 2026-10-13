@@ -280,7 +280,9 @@ PRG-9  MM-4..6 + AN-P5/AN-P7: мультимодальность + мобиль�
   семантика).
 
 **Осталось (только с владельцем / внешние зависимости):** Genesis церемония
-(см. runbook), Android SDK build, десктопная презентация голоса ума (des-8),
+(см. runbook), Android APK верифицирован (assembleDebug UP-TO-DATE, app-debug.apk
+6.5 MB — осталась установка на устройство владельцем), десктопная презентация
+голоса ума (des-8),
 CU-провайдеры (UIA/OCR), SE-5/6 (dev-agents), IP-5/7/8 миграционные части
 (VPS), MM-4..6 (vision-провайдер), полный Privilege Broker Phase C (SCM).
 
