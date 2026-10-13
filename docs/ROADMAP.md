@@ -160,8 +160,21 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         richer later, always over the same verdicts); Emotion ≠ permissions
         STRUCTURALLY TESTED (the AutonomyContext has NO emotional fields; the
         phrasing API returns strings — no overload accepts a principal/decision:
-        «the personality deciding» is unrepresentable). Remainder: **C** only
-        (Privilege Broker — the final phase)
+        «the personality deciding» is unrepresentable). **C0 SPIKE DONE (bd75453,
+        850/850, orchestrator) — PRG-4 COMPLETE**: BrokerProtocol — TYPED ops
+        ONLY (structurally NO string-command field — reflection-tested); the
+        FIXED restart allowlist (the RecoveryRegistry names); ElevateCommand —
+        DENY BY DEFAULT (the explicit enable + CRITICAL/MFA/Owner = the double
+        gate; the spike NEVER executes); BrokerServer — NamedPipeServerStreamAcl
+        with the CURRENT-USER-ONLY descriptor (the OS refuses other users before
+        the protocol starts — the ACL IS the identity gate), ONE op at a time;
+        BrokerClient — the typed round-trip. The REAL NAMED-PIPE round-trips
+        tested live (the correlation + the allowlist verdicts through the pipe).
+        The spike lessons: the per-test unique pipe names (the orphaned-server
+        interception!), the client hard timeouts, the stuck MSBuild nodes after
+        the timed-out runs. The FULL Phase C (the actual privileged SCM calls,
+        the --broker service launch, the Core→Agent→Broker chain) — the follow-up
+        per the spike choice: NAMED PIPES confirmed
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
