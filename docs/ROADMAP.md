@@ -176,6 +176,28 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         the --broker service launch, the Core→Agent→Broker chain) — the follow-up
         per the spike choice: NAMED PIPES confirmed
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
+       — ✅ **COMPLETE 13.10.2026 (721/721 Foundation + 151 Desktop = 872 total;
+       оркестратор)**: **RA-3** (274a48b): RewardStore — bounded ring 256 RewardEvent
+       (At/Type/Summary/Source); **АНТИ-REWARD-HACKING СТРУКТУРНО**: Source-
+       provenance обязательна (ArgumentException — TOLIK никогда не награждает себя
+       без реального источника), store без authority (рефлексия: ни один метод не
+       принимает/возвращает AutonomyDecision/SessionPrincipal — награды
+       ИНФОРМИРУЮТ, никогда не грантуют); Effort-vs-Result честно раздельно
+       (Achievement vs EffortAcknowledgement — проваленная работа получает усилие,
+       НИКОГДА фейковое достижение); **MI-7** (274a48b): ProactivePolicy — TOLIK
+       НИКОГДА не прерывает пользователя (5-мин тихое окно), дневной бюджет жёсткий
+       (6), приоритеты (SystemSignal достижимы, CuriosityShare только при
+       boredom>=0.5 и бюджете 2/3, всё прочее DEFAULT DENY), locked глушит; **MI-8**
+       (8be991d): SelfModel — честная self-дескрипция (все capabilities с рисками
+       из реестра + mind snapshot + ФИКСИРОВАННЫЕ структурные лимиты — ум не может
+       редактировать свои лимиты, анти-self-escalation структурна) + SelectionInspector
+       (read-only trace: все кандидаты оценены, cooldowns не тронуты, ограничения
+       видны — НЕ chain-of-thought); **MI-9-seed** (8be991d): GenesisSeedRuntime —
+       загрузка данных pre-ceremony, АКТИВАЦИЯ только на церемонии (§85), ум читает
+       seed ТОЛЬКО после активации, повторный seed после рождения ОТВЕРГАЕТСЯ
+       (continuity, mind.md §7), seed без capability/permission полей структурно.
+       Остаток: реальное наполнение seed на церемонии; Cosmetic/Creative типы —
+       additive; Cephalon-интеграция SelfModel
        — ЧАСТИЧНО DONE 13.10.2026 (Foundation green; оркестратор): **RA-3**
        (274a48b): RewardStore — bounded ring 256 RewardEvent(At/Type/Summary/
        Source); **ANTI-REWARD-HACKING СТРУКТУРНО**: Source-provenance обязательна
