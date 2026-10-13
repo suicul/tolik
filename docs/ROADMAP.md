@@ -125,7 +125,15 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
        (owner-only, audited; stop паузит ВСЕ running-таски через существующий
        lifecycle); /health + emergencyStopped. Остаток: **C** (Privilege Broker —
        admin-token service + C0 IPC spike), **D2** (Repair Mode capabilities),
-       **E2** (Notifications reactive/proactive), **F** (Personality/Relationship
+        policy: whitelist + priorities; config-change NEVER; rate-limit. **E2 DONE
+        (c0b7f47, 818/818, orchestrator)**: NotificationPolicy + Gate — proactive
+        notifications are policed: the fixed whitelist of informative kinds with
+        priorities; «я решил изменить конфигурацию» — НИКОГДА a notification (a
+        permission request routes to the confirmation flow); unknown fails closed;
+        rate-limit per-category + global (TOLIK_NOTIFY_*, honest drops, rejects
+        never burn the budget); the supervisor stalls + the reminders wired
+        through the gate (the repeat spam capped). Notifications INFORM — never
+        authorize. Remainder: **C**, **D2**, **F** (Personality/Relationship
        layer), **H** (File scopes per-op / NetworkCapability / Secret Access Layer)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
