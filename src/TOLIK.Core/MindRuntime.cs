@@ -230,7 +230,8 @@ public sealed class MindRuntime
             {
                 _selectorTickCount = 0;
                 var drives = DriveSystem.Compute(_state.Snapshot(), new MindInputs(minutesSince, _activeTasks, _locked));
-                var selection = _activities.Select(drives, now, _locked, _emergencyStopped);
+                var userPresent = minutesSince < 30.0; // CA-5: the presence flag — < 30 min = the user is around
+                var selection = _activities.Select(drives, now, _locked, _emergencyStopped, userPresent);
                 if (!string.Equals(_currentActivity, selection.Activity, StringComparison.Ordinal))
                 {
                     _currentActivity = selection.Activity;
