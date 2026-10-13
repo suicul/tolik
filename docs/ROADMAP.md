@@ -149,7 +149,20 @@ PRG-4  Governance C/D2/E2/F/G/H2: broker + emergency stop + self-healing (safety
         owner re-arms; the budgets never shared); InstallTolikUpdate — CRITICAL +
         MFA + confirm, never background, NEVER self-invoked; UpdateIntegrityPolicy
         — the SIGNED manifest mandatory (an unsigned blob NEVER installs, T13).
-        Remainder: **C** (Privilege Broker), **F** (Personality/Relationship layer)
+        — the SIGNED manifest mandatory (an unsigned blob NEVER installs, T13).
+        **F DONE (50dbc34, 844/844, orchestrator)**: PersonalityPhrasing — the
+        HUMAN phrasings over the ALREADY-MADE verdicts (Personality ≠
+        Authorization, треб. #16/#17): Deny «за пределами полномочий, не
+        обсуждается» (never softened); ConfirmationRequest «Ща, надо подтверждение:
+        действие — цель, риск, последствие» (треб. #19: never «CONFIRM ACTION ID
+        84729»; the bound-confirmation SHA-256 underneath unchanged); TaskResult
+        «Готово:/Есть проблема: … Разберусь»; TaskPausedForStall «всё сохранено»;
+        the FIXED templates = the human tone even offline (the LLM may phrase
+        richer later, always over the same verdicts); Emotion ≠ permissions
+        STRUCTURALLY TESTED (the AutonomyContext has NO emotional fields; the
+        phrasing API returns strings — no overload accepts a principal/decision:
+        «the personality deciding» is unrepresentable). Remainder: **C** only
+        (Privilege Broker — the final phase)
 PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + rewards
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
