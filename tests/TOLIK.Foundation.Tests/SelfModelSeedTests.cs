@@ -168,7 +168,6 @@ public sealed class GenesisSeedTests
         Assert.Contains("Temperament", propertyNames);
         Assert.Contains("CoreValues", propertyNames);
         Assert.DoesNotContain(propertyNames, n => n is "Permissions" or "Capabilities" or "Role" or "TrustLevel");
-        static bool Contains(List<string> haystack, string[] needles) => haystack.Any(h => needles.Contains(h));
     }
 
     [Fact]
