@@ -1,4 +1,4 @@
-using TOLIK.Core;
+﻿using TOLIK.Core;
 using TOLIK.Infrastructure.Authorization;
 using TOLIK.Infrastructure.Identity;
 using Xunit;
@@ -13,6 +13,103 @@ namespace TOLIK.Foundation.Tests;
 /// — structurally tested by reflection); Effort-vs-Result is honestly typed (the
 /// failed work earns the EffortAcknowledgement, never a fake achievement).
 /// </summary>
+public sealed class FailurePatternSurfaceTests
+{
+    private static readonly DateTimeOffset T0 = new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public void Below_three_failures_never_surfaces()
+    {
+        var mind = new MindRuntime();
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        Assert.False(mind.ShouldSurfaceFailurePattern);
+        Assert.Null(mind.ConsumeFailurePatternSurface());
+    }
+
+    [Fact]
+    public void Three_failures_surface_once_then_stay_quiet()
+    {
+        var mind = new MindRuntime();
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        Assert.True(mind.ShouldSurfaceFailurePattern);
+        var message = mind.ConsumeFailurePatternSurface();
+        Assert.NotNull(message);
+        Assert.Contains("3", message, StringComparison.Ordinal); // the honest streak count
+        // The once-per-streak semantics: no re-surface every tick (never spam).
+        Assert.False(mind.ShouldSurfaceFailurePattern);
+        Assert.Null(mind.ConsumeFailurePatternSurface());
+        // A fourth failure within the same streak does NOT re-surface.
+        mind.OnTaskFailed();
+        Assert.False(mind.ShouldSurfaceFailurePattern);
+        // The journal carries the surface event (the fixed generic kind).
+        Assert.Contains(mind.Journal.Recent(32), e => e.Kind == MindJournalKind.ProactiveSurface);
+    }
+
+    [Fact]
+    public void Success_re_arms_the_surface_for_the_next_streak()
+    {
+        var mind = new MindRuntime();
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        Assert.NotNull(mind.ConsumeFailurePatternSurface());
+        Assert.Null(mind.ConsumeFailurePatternSurface()); // consumed — quiet
+        mind.OnTaskCompleted(); // the success breaks the streak and re-arms
+        Assert.Null(mind.ConsumeFailurePatternSurface()); // the streak is reset — nothing pending
+        mind.OnTaskFailed();
+        mind.OnTaskFailed();
+        Assert.False(mind.ShouldSurfaceFailurePattern); // 2 < 3 — still quiet
+        mind.OnTaskFailed();
+        Assert.True(mind.ShouldSurfaceFailurePattern); // the new streak re-arms the surface
+        Assert.NotNull(mind.ConsumeFailurePatternSurface());
+    }
+
+    [Fact]
+    public void Policy_gates_the_surface_quiet_window_and_budget_and_locked()
+    {
+        var mind = new MindRuntime();
+        for (var i = 0; i < 5; i++) mind.OnTaskFailed();
+        var state = mind.Snapshot();
+        // The quiet window: the user interacted 1 minute ago — NO proactive contact.
+        var quiet = ProactivePolicy.Decide(
+            ProactivePolicy.ProactiveKind.SystemSignal, state, minutesSinceInteraction: 1.0,
+            proactivesToday: 0, now: T0, locked: false);
+        Assert.False(quiet.Allowed);
+        // The budget is HARD: the day's proactives are spent — silence.
+        var spent = ProactivePolicy.Decide(
+            ProactivePolicy.ProactiveKind.SystemSignal, state, minutesSinceInteraction: 60.0,
+            proactivesToday: ProactivePolicy.DailyBudget, now: T0, locked: false);
+        Assert.False(spent.Allowed);
+        // LOCKED silences everything (the real security input).
+        var locked = ProactivePolicy.Decide(
+            ProactivePolicy.ProactiveKind.SystemSignal, state, minutesSinceInteraction: 60.0,
+            proactivesToday: 0, now: T0, locked: true);
+        Assert.False(locked.Allowed);
+        // The open path: quiet elapsed + budget room + unlocked — the honest system signal reaches.
+        var open = ProactivePolicy.Decide(
+            ProactivePolicy.ProactiveKind.SystemSignal, state, minutesSinceInteraction: 60.0,
+            proactivesToday: 0, now: T0, locked: false);
+        Assert.True(open.Allowed);
+    }
+
+    [Fact]
+    public void E2_gate_carries_the_failure_surface_through_the_whitelist()
+    {
+        var gate = new NotificationGate();
+        // TaskFailed is on the fixed whitelist — the honest failure surface may reach.
+        var verdict = gate.TrySend(NotificationKind.TaskFailed, T0);
+        Assert.True(verdict.Allowed);
+        // The rate window drops the honest spam (4/min category default): five more in the same minute.
+        var dropped = false;
+        for (var i = 0; i < 5; i++)
+            if (!gate.TrySend(NotificationKind.TaskFailed, T0.AddSeconds(i + 1)).Allowed)
+                dropped = true;
+        Assert.True(dropped, "the rate window must drop the over-limit surfaces honestly");
+    }
+}
 public sealed class RewardStoreTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);

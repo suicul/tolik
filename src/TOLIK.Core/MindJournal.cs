@@ -12,6 +12,7 @@ public static class MindJournalKind
     public const string GoalOutcome = "GoalOutcome";
     public const string TaskStalled = "TaskStalled";
     public const string ReviewResult = "ReviewResult";
+    public const string ProactiveSurface = "ProactiveSurface";
 }
 
 /// <summary>One operational journal record: when, what kind, the deterministic generic summary.</summary>
@@ -45,6 +46,7 @@ public sealed class MindJournal
             MindJournalKind.TaskCancelled => "Задача отменена",
             MindJournalKind.TaskStalled => "Задача приостановилась",
             MindJournalKind.Interaction => "Взаимодействие",
+            MindJournalKind.ProactiveSurface => "Проактивное сообщение владельцу",
             _ => throw new ArgumentException("Unknown journal kind (fixed literals only — never user content).", nameof(kind))
         };
         lock (_gate)

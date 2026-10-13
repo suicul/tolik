@@ -21,6 +21,7 @@ public sealed class MindRuntime
     private DateTimeOffset _lastInteraction = DateTimeOffset.MinValue;
     private int _activeTasks;
     private int _consecutiveFailures; // MI-7: the failure streak (the self-awareness — 3+ → the mind proactively surfaces it)
+    private bool _failurePatternSurfaced; // MI-7: once-per-streak semantics (never spam every tick)
 
     // PRG-1b (MI-5 + MI-6): the operational journal (privacy by construction — no user
     // content ever enters it) and the transition-based emotion engine. Both thread-safe
@@ -120,6 +121,7 @@ public sealed class MindRuntime
             SyncDrives();
             _journal.Record(MindJournalKind.TaskCompleted);
             _consecutiveFailures = 0; // the success breaks the failure streak
+            _failurePatternSurfaced = false; // re-arm the proactive surface for the next streak
         }
     }
 
@@ -276,15 +278,33 @@ public sealed class MindRuntime
         }
     }
 
+    /// <summary>The self-awareness: the mind NOTICES the failure pattern (3+ consecutive
+    /// failures) and proactively tells the owner — without being asked. The surface is
+    /// ONCE PER STREAK (never spam every tick); the success breaks the streak and re-arms.</summary>
+    public bool ShouldSurfaceFailurePattern => _consecutiveFailures >= 3 && !_failurePatternSurfaced;
+
+    /// <summary>Consumes the pending failure-pattern surface (once per streak): returns the
+    /// honest deterministic message with the streak count, or null when nothing is pending.
+    /// The caller must still pass the message through the mind-side ProactivePolicy and the
+    /// E2 NotificationGate — the mind proposes, the gates decide (never bypass).</summary>
+    public string? ConsumeFailurePatternSurface()
+    {
+        lock (_gate)
+        {
+            if (_consecutiveFailures < 3 || _failurePatternSurfaced) return null;
+            _failurePatternSurfaced = true;
+            var message = $"Замечена серия неудач: {_consecutiveFailures} задач подряд не завершились. Стоит разобраться.";
+            _journal.Record(MindJournalKind.ProactiveSurface);
+            return message;
+        }
+    }
+
     /// <summary>
     /// The bounded reflection (mind.md §5, MI-4): the deterministic outcome statistics
     /// over the recent journal window — REAL observations only, never invented lessons.
     /// «Как прошло recent время?» reads from this.
     /// </summary>
-        /// <summary>The self-awareness: the mind NOTICES the failure pattern (3+ consecutive
-    /// failures) and proactively tells the owner — without being asked. Reset on success.</summary>
-    public bool ShouldSurfaceFailurePattern => _consecutiveFailures >= 3;
-public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
+    public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
     {
         lock (_gate)
         {
@@ -308,7 +328,9 @@ public string ReflectionSummary(TimeSpan window, DateTimeOffset now)
         _state.Adjust("novelty", _novelty.Current - _state.Novelty);
     }
 
-    private double MinutesSinceInteraction(DateTimeOffset now) =>
+    /// <summary>The minutes since the last real interaction (the ProactivePolicy's
+    /// quiet-window input; never-interacted = fully saturated inactivity).</summary>
+    public double MinutesSinceInteraction(DateTimeOffset now) =>
         _lastInteraction == DateTimeOffset.MinValue
             ? 10_000.0 // never interacted: fully saturated inactivity
             : Math.Max(0.0, (now - _lastInteraction).TotalMinutes);

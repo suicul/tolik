@@ -60,6 +60,7 @@ public sealed class CephalonExpressionService(
     VoiceTurnRegistry voiceTurns,
     TOLIK.Core.MindRuntime mind,
     TOLIK.Core.VoiceSpectrumState spectrum,
+    TOLIK.Core.NotificationGate notifications,
     ILogger<CephalonExpressionService> logger) : BackgroundService
 {
     internal const string WireKind = "cephalon_expression";
@@ -77,6 +78,8 @@ public sealed class CephalonExpressionService(
     private readonly ConcurrentDictionary<Guid, DateTimeOffset> _lastPublish = new();
     private readonly TimeSpan _tickInterval = TickIntervalFromConfig();
     private readonly TimeSpan _heartbeat = HeartbeatFromConfig();
+    // MI-7: the daily proactive budget state (mind-side; the E2 gate adds the rate windows).
+    private (DateTimeOffset Day, int Count) _proactiveDay;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -161,6 +164,11 @@ public sealed class CephalonExpressionService(
                 mind.OnUserReturned();
                 hub.PublishToUser(userId, BuildPresenceReturnJson(mind.Journal.RenderRecent(TimeSpan.FromHours(1), now)));
             }
+            // MI-7: the mind's self-awareness — the failure pattern (3+ consecutive
+            // failures) surfaces ONCE per streak, through BOTH gates: the mind-side
+            // ProactivePolicy (quiet window + budget + locked) and the E2 NotificationGate
+            // (the fixed whitelist + the rate windows). The mind proposes, the gates decide.
+            TrySurfaceFailurePattern(userId, now, locked);
             var lastPublished = _lastPublish.TryGetValue(userId, out var at) ? at : DateTimeOffset.MinValue;
             // The mind is ONE for the ONE TOLIK (identity-level, not per-user): its real
             // drives flow into every connected owner's expression (PLAN REFORM PRG-1a).
@@ -307,6 +315,58 @@ public sealed class CephalonExpressionService(
     /// </summary>
     internal static string BuildPresenceReturnJson(string summary) =>
         JsonSerializer.Serialize(new { kind = "presence_return", summary });
+
+    /// <summary>
+    /// MI-7 (PRG-5a): the failure-pattern proactive surface — the mind NOTICED a streak
+    /// of consecutive failures and wants to tell the owner. The message is composed by
+    /// the mind (honest, deterministic, no task details — privacy by construction), then
+    /// gated TWICE: (1) the mind-side <see cref="ProactivePolicy"/> (the daily budget is
+    /// hard, the quiet window after a real interaction, LOCKED silences everything) and
+    /// (2) the E2 <see cref="NotificationGate"/> (the fixed whitelist + the rate windows).
+    /// A gate denial keeps the surface pending (nothing consumed); a sent message is
+    /// journaled and budgeted. A dropped-by-E2 message is an honest loss (the journal
+    /// already carries every failure — nothing informational is lost).
+    /// </summary>
+    internal void TrySurfaceFailurePattern(Guid userId, DateTimeOffset now, bool locked)
+    {
+        if (!mind.ShouldSurfaceFailurePattern) return;
+
+        // 1. The mind-side gate (pure — no side effects on denial).
+        var day = now.Date;
+        var proactivesToday = _proactiveDay.Day == day ? _proactiveDay.Count : 0;
+        var decision = ProactivePolicy.Decide(
+            ProactivePolicy.ProactiveKind.SystemSignal,
+            mind.Snapshot(),
+            mind.MinutesSinceInteraction(now),
+            proactivesToday,
+            now,
+            locked);
+        if (!decision.Allowed) return;
+
+        // 2. Consume the pending surface (once per streak).
+        var message = mind.ConsumeFailurePatternSurface();
+        if (message is null) return;
+
+        // 3. The E2 gate — the final gate (the fixed whitelist + the rate windows).
+        var verdict = notifications.TrySend(NotificationKind.TaskFailed, now);
+        if (!verdict.Allowed)
+        {
+            logger.LogInformation(
+                "Failure-pattern surface dropped honestly by the notification gate: {Reason}.", verdict.Reason);
+            return;
+        }
+
+        // 4. Send + budget + journal (the journal entry is already recorded by the consume).
+        hub.PublishToUser(userId, BuildProactiveJson(message));
+        _proactiveDay = (day, proactivesToday + 1);
+        logger.LogInformation("Proactive failure-pattern surfaced to {User} ({Today}/{Budget}).",
+            userId, proactivesToday + 1, ProactivePolicy.DailyBudget);
+    }
+
+    /// <summary>The proactive payload — the same tolerant wire shape as presence_return
+    /// (unknown to a renderer = safely ignored).</summary>
+    internal static string BuildProactiveJson(string summary) =>
+        JsonSerializer.Serialize(new { kind = "proactive", summary });
 
     /// <summary>
     /// {"kind":"cephalon_expression","expression":{...camelCase...},"at":"<ISO-8601>"}.
