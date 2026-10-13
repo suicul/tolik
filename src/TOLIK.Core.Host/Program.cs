@@ -112,6 +112,10 @@ builder.Services.AddHostedService<CephalonExpressionService>();
 // It creates MOTIVATION, never permission — this authorizes nothing.
 builder.Services.AddSingleton<MindRuntime>();
 builder.Services.AddHostedService<MindRuntimeService>();
+// Emergency Stop state (Phase G — PLAN REFORM PRG-4a): the owner's soft kill switch
+// — a runtime autonomy pause (NOT LOCKED). In-memory by design (a restart is the
+// natural reset; the owner can re-stop).
+builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.EmergencyStopState>();
 // TaskSupervisorService (CA-2 — PLAN REFORM PRG-3a): the RUNNING-task watchdog —
 // the liveness/stall detection with the bounded escalation ladder (L1 the mind
 // notices → L2 the owner notification → L3 the pause: stop + preserve + ask;
@@ -252,6 +256,45 @@ app.MapPost("/mind/expression/recipe/{id}/feedback", async (string id, HttpConte
         ? Results.Ok(new { recorded = true, id, positive = request?.Positive == true })
         : Results.NotFound(new { error = "recipe_not_found" });
 });
+// Emergency Stop (Phase G — PLAN REFORM PRG-4a, docs/governance.md §8): the owner's
+// SOFT kill switch — a MANAGED AUTONOMY PAUSE, deliberately different from LOCKED
+// (which is the security-incident state). STOP: the running tasks PAUSE (the existing
+// lifecycle transitions), the NEW PRIVILEGED operations DENY (the AutonomyPolicy —
+// the reads stay live so the owner keeps the channel), the mind rests (Idle-only
+// occupations). Identity / memory / Genesis / sessions are NEVER touched. RESUME is
+// the owner's explicit call. Owner-only; audited.
+app.MapPost("/emergency/stop", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.EmergencyStopState emergency, MindRuntime mind, TaskLifecycle lifecycle, IDbContextFactory<TOLIK.Infrastructure.Persistence.TolikDbContext> dbFactory, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!string.Equals(principal.Role, TolikRoles.OwnerName, StringComparison.Ordinal))
+        return Results.StatusCode(StatusCodes.Status403Forbidden); // the owner's switch only
+    emergency.Stop();
+    mind.MarkEmergencyStopped(true);
+    var paused = 0;
+    await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
+    {
+        var runningIds = await db.Tasks.Where(t => t.Status == "Running").Select(t => t.Id).ToListAsync(cancellationToken);
+        foreach (var id in runningIds)
+        {
+            lifecycle.Pause(id, "emergency_stop"); // the existing transition + the evidence flow
+            paused++;
+        }
+    }
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "emergency.stop", "ALLOW", "owner_emergency_stop", principal, null, null, null, $"paused:{paused}", cancellationToken);
+    return Results.Ok(new { stopped = true, pausedTasks = paused });
+});
+app.MapPost("/emergency/resume", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.EmergencyStopState emergency, MindRuntime mind, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!string.Equals(principal.Role, TolikRoles.OwnerName, StringComparison.Ordinal))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    emergency.Resume();
+    mind.MarkEmergencyStopped(false);
+    await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "emergency.resume", "ALLOW", "owner_emergency_resume", principal, null, null, null, "resumed", cancellationToken);
+    return Results.Ok(new { stopped = false });
+});
 app.UseDefaultFiles();
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -274,7 +317,7 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
-app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, CoreLeaseState leaseState, TOLIK.Infrastructure.Identity.CoreLeaseManager leases) =>
+app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context, IConfiguration configuration, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, TOLIK.Infrastructure.Authorization.EmergencyStopState emergencyState, CoreLeaseState leaseState, TOLIK.Infrastructure.Identity.CoreLeaseManager leases) =>
 {
     // Voice endpoint is configuration (§55: no baked-in hostnames for VPS moves).
     var voiceBase = configuration["TOLIK_VOICE:COSYVOICE_ENDPOINT"] ?? "http://voice:9660";
@@ -340,6 +383,7 @@ app.MapGet("/health", async (CoreRuntimeDescriptor runtime, HttpContext context,
         authority = runtime.IsAuthorizationAuthority ? "Core" : "None",
         execution = runtime.ExecutesOperatingSystemCommands ? "Local" : "DelegatedToAgent",
         locked = securityState.IsLocked,
+        emergencyStopped = emergencyState.IsStopped,
         coreLease = new { stale = leaseState.IsStale, reason = leaseState.Reason, epoch = leaseEpoch, host = leaseHost }
     });
 });

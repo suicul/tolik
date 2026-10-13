@@ -53,8 +53,10 @@ public sealed class ActivitySelector
             ? TimeSpan.FromMinutes(m)
             : TimeSpan.FromMinutes(10);
 
-    /// <summary>Selects ONE activity for the current drives. Deterministic given (drives, now, locked).</summary>
-    public ActivitySelection Select(IReadOnlyList<DriveState> drives, DateTimeOffset now, bool locked)
+    /// <summary>Selects ONE activity for the current drives. Deterministic given (drives, now, locked).
+    /// LOCKED restricts to the safety-relevant candidates; idleOnly (the Emergency
+    /// Stop, Phase G) restricts to Idle alone — the stopped mind simply rests.</summary>
+    public ActivitySelection Select(IReadOnlyList<DriveState> drives, DateTimeOffset now, bool locked, bool idleOnly = false)
     {
         ArgumentNullException.ThrowIfNull(drives);
         lock (_gate)
@@ -66,6 +68,8 @@ public sealed class ActivitySelector
             var bestActivity = ActivityNames.Idle;
             foreach (var candidate in ActivityCandidate.Catalog)
             {
+                if (idleOnly && candidate.Name != ActivityNames.Idle)
+                    continue; // Emergency Stop: the autonomy pauses — the mind rests
                 if (locked && candidate.Name is not (ActivityNames.Idle or ActivityNames.SystemReview))
                     continue; // LOCKED: only the safety-relevant candidates
                 if (candidate.Name != ActivityNames.Idle && IsCoolingDown(candidate.Name, now))

@@ -77,6 +77,19 @@ public sealed class MindRuntime
         lock (_gate) { _locked = locked; }
     }
 
+    private bool _emergencyStopped;
+
+    /// <summary>
+    /// Emergency Stop (Phase G — the owner's soft autonomy pause): the mind's
+    /// activity selection restricts to IDLE ALONE — the stopped mind simply rests
+    /// (the identity/memory/expression stay alive; the occupations pause). The
+    /// resume re-enables the occupations.
+    /// </summary>
+    public void MarkEmergencyStopped(bool stopped)
+    {
+        lock (_gate) { _emergencyStopped = stopped; }
+    }
+
     /// <summary>Task lifecycle events (from the host's TaskLifecycle.EventPublished).</summary>
     public void OnTaskStarted()
     {
@@ -209,7 +222,7 @@ public sealed class MindRuntime
             {
                 _selectorTickCount = 0;
                 var drives = DriveSystem.Compute(_state.Snapshot(), new MindInputs(minutesSince, _activeTasks, _locked));
-                var selection = _activities.Select(drives, now, _locked);
+                var selection = _activities.Select(drives, now, _locked, _emergencyStopped);
                 if (!string.Equals(_currentActivity, selection.Activity, StringComparison.Ordinal))
                 {
                     _currentActivity = selection.Activity;

@@ -29,7 +29,8 @@ public sealed record AutonomyContext(
     bool PartOfTask,
     bool PreAuthorizedRuleMatches,
     bool OfflineMode = false,
-    bool CoreLocked = false);
+    bool CoreLocked = false,
+    bool EmergencyStopped = false);
 
 /// <summary>
 /// Deterministic, pure autonomy policy (docs/governance.md §2) — unit-testable without
@@ -50,6 +51,12 @@ public static class AutonomyPolicy
         // Unregistered capability — fail closed BEFORE any allow path (defense-in-depth:
         // a pre-authorized rule naming an unregistered capability must never yield Autonomous).
         if (descriptor is null) return AutonomyDecision.Deny;
+        // Emergency Stop (Phase G): the owner's managed autonomy pause — the NEW
+        // PRIVILEGED operations deny (Modify/Destructive/Critical, including the
+        // pre-authorized rules); the reads stay live so the owner keeps the channel
+        // (chat/ask/resume). Never relaxes anything — restriction only.
+        if (ctx.EmergencyStopped && descriptor.DeclaredRisk != ToolRiskLevel.ReadOnly)
+            return AutonomyDecision.Deny;
         // Policy already demanded a confirmation: Critical descriptors additionally require MFA (§2, §9).
         if (ctx.PolicyDecision == AuthorizationDecision.ConfirmationRequired)
             return descriptor is { RequiresMfa: true } ? AutonomyDecision.MfaConfirm : AutonomyDecision.Confirm;
