@@ -228,6 +228,14 @@ PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование 
        demonstration/skill adaptation — полный цикл), **CU-9** (long-running),
        **CU-10** (Cephalon интеграция), **CU-GA** (game layer)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
+       — ЧАСТИЧНО DONE 13.10.2026 (882/882; оркестратор): **SE-2** (76ec5a4):
+       ExperimentLab — self-optimization lifecycle (hypothesis → N candidates →
+       benchmark → compare baseline → accept/reject → bounded memory 128 — a
+       rejected optimization is NOT repeated); NaN rejected; deterministic;
+       **SE-3** (76ec5a4): OptimizationBudget — TOLIK_OPT_* (CPU/RAM/GPU/time,
+       fail-closed parsing, the idle preference). Остаток: **SE-5** (self-
+       development pipeline через dev-agents), **SE-6** (continuous loop), **SE-7**
+       (Cephalon personality integration)
 PRG-8  IP-3/5/7/8: identity-криптография + presence-переходы (миграционная готовность)
 PRG-9  MM-4..6 + AN-P5/AN-P7: мультимодальность + мобильные органы
 ```
