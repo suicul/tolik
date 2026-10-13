@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Windows;
 using TOLIK.Desktop.Bridge;
 using TOLIK.Desktop.Presence;
+using TOLIK.Desktop.Speech;
 using WinForms = System.Windows.Forms;
 
 // WinForms also defines Application — pin the WPF one (the XAML partial already uses it).
@@ -32,6 +33,8 @@ public partial class App : Application
     private CoreExpressionClient? _coreLink;
     private LocalTokenSource? _linkTokens;
     private CancellationTokenSource? _linkCts;
+    private CoreHealthWatcher? _healthWatcher;
+    private SpeechPresenter? _speech;
 
     private WinForms.ToolStripMenuItem? _showItem;
     private WinForms.ToolStripMenuItem? _interactiveItem;
@@ -64,6 +67,7 @@ public partial class App : Application
         SetMode(PresenceMode.Normal, auto: true);
         SetInteractive(false);
 
+        StartSpeech();
         StartCoreLink();
         StartDesktopWatcher();
     }
@@ -102,6 +106,9 @@ public partial class App : Application
         _linkTokens = null;
         _linkCts?.Dispose();
         _linkCts = null;
+        _healthWatcher?.Dispose();
+        _healthWatcher = null;
+        _speech = null;
 
         if (_tray is not null)
         {
@@ -145,8 +152,48 @@ public partial class App : Application
             _window?.Dispatcher.BeginInvoke(() => _window.CephalonHost.OnCoreExpressionFrame(frame));
         client.StateChanged += snapshot =>
             _window?.Dispatcher.BeginInvoke(() => OnCoreLinkStateChanged(snapshot));
+        client.MessageReceived += message =>
+            _window?.Dispatcher.BeginInvoke(() => _speech?.OnMessage(message));
 
         _ = System.Threading.Tasks.Task.Run(() => client.RunAsync(cts.Token));
+
+        StartHealthWatcher(options);
+    }
+
+    /// <summary>
+    /// Wires the mind's voice: the presenter owns the policy (bounded queue, dedupe,
+    /// the emergency-stop gate), the band owns only the choreography. Every entry
+    /// point runs on the dispatcher (the client events arrive on worker threads).
+    /// </summary>
+    private void StartSpeech()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        var speech = new SpeechPresenter();
+        speech.SpeechStarted += message => _window.SpeechBand.Show(message);
+        _window.SpeechBand.CycleCompleted += speech.NotifyCycleCompleted;
+        _speech = speech;
+    }
+
+    /// <summary>
+    /// Starts the emergency-stop poll: the REAL Core /health fact feeds the speech
+    /// gate. While the mind is paused, proactive lines stay silent (honest silence);
+    /// presence digests may still show. Transitions arrive on a worker thread and
+    /// are marshaled; the poll shares the link's cancellation lifetime.
+    /// </summary>
+    private void StartHealthWatcher(CoreLinkOptions options)
+    {
+        var watcher = new CoreHealthWatcher(options);
+        _healthWatcher = watcher;
+        watcher.EmergencyStopChanged += stopped =>
+            _window?.Dispatcher.BeginInvoke(() => _speech?.SetEmergencyStopped(stopped));
+        if (_linkCts is not null)
+        {
+            _ = System.Threading.Tasks.Task.Run(() => watcher.RunAsync(_linkCts.Token));
+        }
     }
 
     private void OnCoreLinkStateChanged(LinkSnapshot snapshot)

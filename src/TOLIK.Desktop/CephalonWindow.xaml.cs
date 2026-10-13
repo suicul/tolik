@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using TOLIK.Desktop.Interop;
 using TOLIK.Desktop.Presence;
 using TOLIK.Desktop.Rendering;
+using TOLIK.Desktop.Speech;
 
 // WinForms also defines Cursors — pin the WPF one.
 using Cursors = System.Windows.Input.Cursors;
@@ -36,6 +37,9 @@ public partial class CephalonWindow : Window
     }
 
     public CephalonHost CephalonHost => Host;
+
+    /// <summary>The mind's voice band (proactive / presence-return overlay).</summary>
+    public CephalonSpeechBand SpeechBand => Speech;
 
     public bool IsInteractive => _interactive;
 

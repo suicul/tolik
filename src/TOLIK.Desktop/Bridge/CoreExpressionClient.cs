@@ -21,7 +21,8 @@ public sealed record LinkSnapshot(CoreLinkState State, string Detail)
 /// <summary>
 /// CE-2 client wiring: connects the overlay to Core's realtime hub over the EXISTING
 /// authenticated WebSocket (/events/ws?token=...), consumes ONLY
-/// <c>cephalon_expression</c> payloads, and drives reconnect policy.
+/// <c>cephalon_expression</c> payloads and the two MIND-VOICE kinds (proactive /
+/// presence_return — the mind speaking to the owner), and drives reconnect policy.
 ///
 /// Honesty rules (the Phase 1 principle, now networked):
 ///   • no connection → honest idle + "offline" detail;
@@ -63,6 +64,10 @@ public sealed partial class CoreExpressionClient
 
     /// <summary>Raised for every parsed expression frame (worker thread).</summary>
     public event Action<ExpressionFrame>? FrameReceived;
+
+    /// <summary>Raised for every parsed mind-voice message — proactive /
+    /// presence_return (worker thread). The App marshals onto the dispatcher.</summary>
+    public event Action<ProactiveMessage>? MessageReceived;
 
     /// <summary>Raised on every honest state transition (worker thread).</summary>
     public event Action<LinkSnapshot>? StateChanged;
@@ -179,8 +184,16 @@ public sealed partial class CoreExpressionClient
             {
                 FrameReceived?.Invoke(frame);
             }
+
+            if (ExpressionWireParser.TryParseMessage(message, out ProactiveMessage? voice)
+                == ExpressionParseOutcome.Parsed && voice is not null)
+            {
+                MessageReceived?.Invoke(voice);
+            }
             // Ignored/Rejected frames keep the connection: other kinds are normal
-            // traffic; a rejected expression frame stands down to the last good one.
+            // traffic (expression and message parsers coexist, each dispatching on
+            // payload.kind); a rejected ours-frame stands down — the last good
+            // state stays and the mind says nothing it cannot say whole.
         }
     }
 

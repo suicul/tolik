@@ -41,6 +41,11 @@ public sealed record CoreLinkOptions(Uri BaseUri, string SourceNote)
     /// <summary>The dev token endpoint (same-machine minting, opt-in on Core).</summary>
     public Uri LocalTokenUri => new(BaseUri, "/auth/local-token");
 
+    /// <summary>The read-only status endpoint (anonymous on Core). The desktop reads
+    /// the REAL emergency-stop fact (<c>emergencyStopped</c>) from here — the speech
+    /// gate must key off Core's authority, never a display-layer guess.</summary>
+    public Uri HealthUri => new(BaseUri, "/health");
+
     /// <summary>
     /// The realtime event WebSocket. The session token travels in the query string
     /// (the browser UI's connectWS pattern) and MUST be URL-encoded: dev tokens are
