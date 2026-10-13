@@ -37,6 +37,7 @@ public sealed class TaskSupervisorService(
     TaskLifecycle lifecycle,
     RealtimeEventHub hub,
     MindRuntime mind,
+    NotificationGate notifications,
     ILogger<TaskSupervisorService> logger) : BackgroundService
 {
     internal const string TickSecondsVariable = "TOLIK_CA_SUPERVISOR_SECONDS";
@@ -117,13 +118,18 @@ public sealed class TaskSupervisorService(
                     logger.LogWarning("Task {TaskId} stalled for {Ticks} supervisor ticks — pausing (stop + preserve + ask).", taskId, ticks + 1);
                     mind.OnTaskStalled();
                     lifecycle.Pause(taskId, "stall_timeout"); // the existing state machine: Running → Paused
-                    hub.PublishToTaskOwner(taskId, System.Text.Json.JsonSerializer.Serialize(new { TaskId = taskId, Kind = "TaskStalledPaused", Detail = "stall_timeout", OccurredAt = now }));
+                    if (notifications.TrySend(NotificationKind.TaskStalled, now).Allowed)
+                        hub.PublishToTaskOwner(taskId, System.Text.Json.JsonSerializer.Serialize(new { TaskId = taskId, Kind = "TaskStalledPaused", Detail = "stall_timeout", OccurredAt = now }));
                     _stalledTicks.TryRemove(taskId, out _);
                     break;
                 case { NotifyOwner: true }:
                     logger.LogWarning("Task {TaskId} stalled (tick {Ticks}) — notifying the owner.", taskId, ticks + 1);
                     mind.OnTaskStalled();
-                    hub.PublishToTaskOwner(taskId, System.Text.Json.JsonSerializer.Serialize(new { TaskId = taskId, Kind = "TaskStalled", Detail = $"no activity for {StallMinutes:0.#} min", OccurredAt = now }));
+                    // E2 (PRG-4b): the proactive notification passes the deterministic
+                    // gate — the fixed whitelist + the rate limiting (the repeated stall
+                    // reminders do not spam; the over-limit drops are honest, never silent-free).
+                    if (notifications.TrySend(NotificationKind.TaskStalled, now).Allowed)
+                        hub.PublishToTaskOwner(taskId, System.Text.Json.JsonSerializer.Serialize(new { TaskId = taskId, Kind = "TaskStalled", Detail = $"no activity for {StallMinutes:0.#} min", OccurredAt = now }));
                     _stalledTicks[taskId] = ticks + 1;
                     break;
                 case { JournalMind: true }:

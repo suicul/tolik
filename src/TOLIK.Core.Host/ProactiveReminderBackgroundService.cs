@@ -16,6 +16,7 @@ public sealed class ProactiveReminderBackgroundService(
     IDbContextFactory<TolikDbContext> dbFactory,
     RealtimeEventHub realtime,
     ProactiveStore proactive,
+    TOLIK.Core.NotificationGate notifications,
     ILogger<ProactiveReminderBackgroundService> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
@@ -45,16 +46,24 @@ public sealed class ProactiveReminderBackgroundService(
                     var due = await proactive.TakeDueAsync(userId, 16, stoppingToken);
                     foreach (var message in due)
                     {
-                        realtime.PublishToUser(message.UserId, JsonSerializer.Serialize(new
+                        // E2 (PRG-4b): the proactive reminder passes the deterministic gate —
+                        // the fixed whitelist (Reminder) + the rate limiting. An over-limit
+                        // drop skips the publish; the message stays consumed as before (the
+                        // honest rate limit — the reminder cadence is already bounded by the
+                        // store's own sweep, so the gate caps the bursts, never the substance).
+                        if (notifications.TrySend(TOLIK.Core.NotificationKind.Reminder, DateTimeOffset.UtcNow).Allowed)
                         {
-                            type = "proactive_reminder",
-                            id = message.Id,
-                            text = message.Text,
-                            priority = message.Priority,
-                            dueAt = message.DueAt,
-                            reason = message.Reason
-                        }));
-                        delivered++;
+                            realtime.PublishToUser(message.UserId, JsonSerializer.Serialize(new
+                            {
+                                type = "proactive_reminder",
+                                id = message.Id,
+                                text = message.Text,
+                                priority = message.Priority,
+                                dueAt = message.DueAt,
+                                reason = message.Reason
+                            }));
+                            delivered++;
+                        }
                     }
                 }
             }

@@ -116,6 +116,9 @@ builder.Services.AddHostedService<MindRuntimeService>();
 // — a runtime autonomy pause (NOT LOCKED). In-memory by design (a restart is the
 // natural reset; the owner can re-stop).
 builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.EmergencyStopState>();
+// NotificationGate (E2 — PLAN REFORM PRG-4b): the proactive notifications pass the
+// deterministic policy (the fixed whitelist + the priorities) + the rate limiting.
+builder.Services.AddSingleton<TOLIK.Core.NotificationGate>();
 // TaskSupervisorService (CA-2 — PLAN REFORM PRG-3a): the RUNNING-task watchdog —
 // the liveness/stall detection with the bounded escalation ladder (L1 the mind
 // notices → L2 the owner notification → L3 the pause: stop + preserve + ask;
