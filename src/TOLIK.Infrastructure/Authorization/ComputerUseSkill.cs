@@ -158,3 +158,102 @@ public sealed class SkillStore
         }
     }
 }
+
+/// <summary>
+/// CU-5 activation: turns COMPLETED gui task runs into workflow skills. The pairing
+/// rule — an ACT (gui_click) followed by its VERIFY (verify_gui) becomes ONE workflow
+/// step (the act carrying the verify's expectation); an unpaired act, a lone
+/// verification, or any non-gui step means the run is NOT a skill (the honest
+/// invariant: a skill is what TOLIK VERIFIED, never what it did blind). The identity
+/// is the stable hash of the step sequence — the same workflow on repeated runs maps
+/// to the same skill, so the confidence ladder is real: a first success adds the skill
+/// at 0.5 (SuccessfulUse), a repeat success +0.1, a failure −0.2 (the store clamps
+/// 0..1). Skills are DATA — they never authorize anything (the authorization pipeline
+/// stays mandatory; IsTrustedForAutonomous gates future autonomous use).
+/// </summary>
+public static class SkillRecorder
+{
+    public const string WindowsApplication = "windows";
+    public const double InitialConfidence = 0.5;
+    public const double SuccessDelta = 0.1;
+    public const double FailureDelta = -0.2;
+
+    /// <summary>The stable workflow identity: SHA-256 of the exact step sequence (the
+    /// same workflow → the same skill; a different sequence → a different skill).</summary>
+    public static string SkillId(IReadOnlyList<string> stepActions)
+    {
+        ArgumentNullException.ThrowIfNull(stepActions);
+        var material = string.Join("|", stepActions);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material));
+        return Convert.ToHexString(hash)[..16];
+    }
+
+    /// <summary>Derives the workflow skill from a gui task run; null when the run is
+    /// not a verifiable workflow (the caller records nothing — never a blind skill).</summary>
+    public static ComputerUseSkill? FromGuiSteps(string taskDescription, IReadOnlyList<string> stepActions)
+    {
+        ArgumentNullException.ThrowIfNull(stepActions);
+        if (stepActions.Count == 0) return null;
+
+        var workflow = new List<SkillWorkflowStep>();
+        for (var i = 0; i < stepActions.Count; i++)
+        {
+            var action = (stepActions[i] ?? string.Empty).Trim();
+            if (action.StartsWith(AgentStepSyntax.GuiClick, StringComparison.OrdinalIgnoreCase))
+            {
+                // The act must be followed by its verification — otherwise the run
+                // did something blind, and blind is not a skill.
+                if (i + 1 >= stepActions.Count) return null;
+                var next = (stepActions[i + 1] ?? string.Empty).Trim();
+                if (!next.StartsWith(AgentStepSyntax.VerifyGui, StringComparison.OrdinalIgnoreCase)) return null;
+                var verify = VerifyGuiStep.TryParse(next[AgentStepSyntax.VerifyGui.Length..].Trim());
+                if (verify is null) return null;
+                workflow.Add(new SkillWorkflowStep(
+                    Verb: "gui_click",
+                    SemanticTarget: action[AgentStepSyntax.GuiClick.Length..].Trim(),
+                    TextInput: null,
+                    Risk: GuiActionRisk.Medium, // GuiClick = ToolRiskLevel.Modify
+                    VerifyExpectation: verify.Expectation));
+                i++; // the verification was consumed as the act's pair
+            }
+            else
+            {
+                // A lone verify/read or any non-gui step: not a pure gui workflow —
+                // v1 records only complete, verified workflows. Fail honest (null).
+                return null;
+            }
+        }
+
+        if (workflow.Count == 0) return null;
+        var description = string.IsNullOrWhiteSpace(taskDescription)
+            ? "gui workflow"
+            : taskDescription.Trim()[..Math.Min(taskDescription.Trim().Length, MaxDescriptionLength)];
+        return new ComputerUseSkill(
+            Id: SkillId(stepActions),
+            Application: WindowsApplication,
+            AppVersion: "1",
+            Version: 1,
+            Description: description,
+            Workflow: workflow,
+            Provenance: SkillProvenance.SuccessfulUse,
+            Status: SkillStatus.Active,
+            Confidence: InitialConfidence);
+    }
+
+    private const int MaxDescriptionLength = 256;
+
+    /// <summary>The confidence ladder. A first success ADDS the skill (0.5); a repeat
+    /// success +0.1; a failure −0.2 — but a failure of an UNKNOWN workflow records
+    /// nothing (there is nothing to demote; a single failed run never creates a skill).
+    /// Returns true when the store was updated.</summary>
+    public static bool RecordOutcome(SkillStore store, string taskDescription, IReadOnlyList<string> stepActions, bool success)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        var skill = FromGuiSteps(taskDescription, stepActions);
+        if (skill is null) return false;
+        var existing = store.TryGet(WindowsApplication, skill.Id);
+        if (existing is null)
+            return success && store.Add(skill).Ok;
+        return store.AdjustConfidence(WindowsApplication, skill.Id, success ? SuccessDelta : FailureDelta);
+    }
+}

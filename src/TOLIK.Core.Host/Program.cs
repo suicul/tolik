@@ -92,6 +92,7 @@ builder.Services.AddSingleton<TrustedPersonEnrollment>();
 builder.Services.AddSingleton<SoundboardRateLimiter>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.ProactiveStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.LearnedRuleStore>();
+builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.SkillStore>();
 builder.Services.AddSingleton<TOLIK.Infrastructure.Authorization.ConfirmationStore>();
 // CE-2 (Cephalon expression wiring): ONE hub instance, created before Build so the DI
 // singleton is the SAME object the /events/ws endpoint registers clients on and the
@@ -1542,7 +1543,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
         confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "approved", cancellationToken);
     return Results.Ok(new { approved = true, confirmationId, note = "Re-run the execute request; the bound confirmation will be consumed once." });
 });
-app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, TOLIK.Infrastructure.Identity.TaskLeaseStore taskLeases, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest request, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, BoundedPlanner planner, LlmTaskPlanner autoPlanner, ModelRouter router, ModelCompletionClient completion, PlanExecutionGuard guard, AgentCommandDispatcher dispatcher, TOLIK.Infrastructure.Authorization.AuthorizationLeaseStore leases, TOLIK.Infrastructure.Identity.TaskLeaseStore taskLeases, TOLIK.Infrastructure.Authorization.CoreSecurityState securityState, IDbContextFactory<TolikDbContext> factory, TOLIK.Infrastructure.Authorization.SkillStore skillStore, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1551,6 +1552,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
     var task = lifecycle.Get(taskId);
     if (task is null) return Results.NotFound();
     if (!lifecycle.TryStart(taskId, out var taskCancellation)) return Results.Conflict(new { error = "invalid_task_state" });
+    IReadOnlyList<string>? plannedActions = null; // captured for the failure-path skill recording (the catch is outside the plan's scope)
     // Lease (stage 2c of the interface/ port): a short-lived (60s default) per-run
     // authorization bound to the authenticated session; its ceiling comes from the
     // principal's role (unknown/unparsed role → read-only, fail closed). Every step
@@ -1566,6 +1568,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
         persistedTask.Status = "Running";
         await db.SaveChangesAsync(executionCancellation.Token);
         var plan = planner.Create(request.Request ?? task.Description, request.MaxSteps, TimeSpan.FromSeconds(request.BudgetSeconds), await ResolveStepsAsync(request, task.Description, autoPlanner, router, completion, executionCancellation.Token));
+        plannedActions = plan.Steps.Select(s => s.Action).ToList(); // CU-5: the workflow identity basis (stable across re-runs)
         var confirmations = context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Authorization.ConfirmationStore>();
         var stepAudit = context.RequestServices.GetRequiredService<AuditWriter>();
         var stepNumber = 0;
@@ -1757,6 +1760,11 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
         persistedTask.Status = "Completed";
         persistedTask.CompletedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(CancellationToken.None);
+        // CU-5 activation: a completed gui run records/raises its workflow skill
+        // (SuccessfulUse). Only VERIFIED workflows become skills (SkillRecorder's
+        // pairing rule); skills are DATA and never authorize anything.
+        if (plannedActions is not null)
+            TOLIK.Infrastructure.Authorization.SkillRecorder.RecordOutcome(skillStore, task.Description ?? string.Empty, plannedActions, success: true);
         return Results.Ok(new { taskId, results });
     }
     catch (OperationCanceledException) when (taskCancellation.IsCancellationRequested || cancellationToken.IsCancellationRequested)
@@ -1811,6 +1819,10 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
         lifecycle.Fail(taskId, ex.Message);
         var failed = await db.Tasks.SingleOrDefaultAsync(x => x.Id == taskId && x.UserId == principal.UserId, CancellationToken.None);
         if (failed is not null) { failed.Status = "Failed"; failed.CompletedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(CancellationToken.None); }
+        // CU-5: a failed gui run DEMOTES its known workflow skill (-0.2); an unknown
+        // workflow records nothing (a single failed run never creates a skill).
+        if (plannedActions is not null)
+            TOLIK.Infrastructure.Authorization.SkillRecorder.RecordOutcome(skillStore, task.Description ?? string.Empty, plannedActions, success: false);
         return Results.Ok(new { taskId, results = completed, failed = true, error = ex.Message });
     }
     catch (Exception ex)
@@ -1820,6 +1832,27 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
         if (failed is not null) { failed.Status = "Failed"; failed.CompletedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(CancellationToken.None); }
         throw;
     }
+});
+// CU-5 observability: the learned skills — DATA (they never authorize anything;
+// the trust flag is informational for the future autonomous gating).
+app.MapGet("/skills", async (HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.SkillStore skillStore, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var skills = skillStore.List().Select(s => new
+    {
+        s.Id,
+        s.Application,
+        s.AppVersion,
+        s.Version,
+        s.Description,
+        provenance = s.Provenance.ToString(),
+        status = s.Status.ToString(),
+        s.Confidence,
+        trustedForAutonomous = skillStore.IsTrustedForAutonomous(s.Application, s.Id),
+        steps = s.Workflow.Select(w => new { w.Verb, w.SemanticTarget, risk = w.Risk.ToString(), w.VerifyExpectation })
+    }).ToList();
+    return Results.Ok(new { count = skills.Count, skills });
 });
 app.MapPost("/memory", async (MemoryRequest request, HttpContext context, IdentityService identity, ScopedMemory memory, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
