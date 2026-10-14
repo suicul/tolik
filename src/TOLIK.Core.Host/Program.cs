@@ -1711,6 +1711,34 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 if (!GuiTargetSpec.IsWellFormed(target)) throw new ArgumentException("gui_click requires a bounded target: automation_id=<id> or name=<text>.");
                 return await DispatchGuardedAsync(AgentCapability.GuiClick, target);
             }
+            // CU-3 wiring: the CLOSED LOOP — act (gui_click) then VERIFY the semantic
+            // state (this step). The verification dispatches a GuiRead (ReadOnly) and
+            // checks the result against the expectation via ClosedLoopRunner.Verify:
+            // Verified = the step succeeds; Mismatch = the step FAILS HONESTLY (the plan
+            // composes the bounded retry — click;verify;click;verify — never an
+            // infinite click-loop; the runner's MaxAttempts semantics live in the plan).
+            const string verifyGuiPrefix = AgentStepSyntax.VerifyGui;
+            if (step.Action.StartsWith(verifyGuiPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var parsed = VerifyGuiStep.TryParse(step.Action[verifyGuiPrefix.Length..].Trim())
+                    ?? throw new ArgumentException("verify_gui requires '<target-spec>;expect=<substring>'.");
+                var targetSpec = parsed.Target.Kind switch
+                {
+                    GuiTargetKind.AutomationId => $"automation_id={parsed.Target.Value}",
+                    GuiTargetKind.Name => $"name={parsed.Target.Value}",
+                    _ => throw new UnauthorizedAccessException("verify_gui target kind is not supported (fail closed).")
+                };
+                var actual = await DispatchGuardedAsync(AgentCapability.GuiRead, targetSpec);
+                var action = new TOLIK.Infrastructure.Authorization.ComputerUseAction(
+                    "verify", parsed.Target.Value, TextInput: null,
+                    TOLIK.Infrastructure.Authorization.GuiActionRisk.Low, parsed.Expectation);
+                var status = TOLIK.Infrastructure.Authorization.ClosedLoopRunner.Verify(
+                    action, observedAfter: null, actualSemanticState: actual);
+                if (status != TOLIK.Infrastructure.Authorization.ClosedLoopStepStatus.Verified)
+                    throw new StepFailedException(
+                        $"verify mismatch: expected '{parsed.Expectation}' in: {actual}");
+                return actual;
+            }
             throw new UnauthorizedAccessException("Action is not available through the bounded Agent dispatcher.");
         }, executionCancellation.Token);
         if (!lifecycle.Complete(taskId, $"steps={results.Count}"))
