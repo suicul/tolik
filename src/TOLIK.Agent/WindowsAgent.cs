@@ -526,6 +526,7 @@ public sealed class WindowsAgent
                 AgentCapability.RunOpenCode => await RunAssistantCliAsync("opencode", command.Argument, cancellationToken),
                 AgentCapability.GuiRead => GuiAutomationProvider.Read(command.Argument),
                 AgentCapability.GuiClick => GuiAutomationProvider.Click(command.Argument),
+                AgentCapability.CaptureScreen => ScreenCapture.Capture(command.Argument, cancellationToken),
                 _ => throw new UnauthorizedAccessException("Agent command capability is not implemented.")
             };
             response = new(command.CommandId, command.AgentId, CommandOutcome.Completed, result, null);
@@ -851,7 +852,7 @@ public sealed class WindowsAgent
     [
         "ReadFile", "ListDirectory", "GetProcessStatus", "RunProcess",
         "RunBuild", "RunTests", "RunCodex", "RunOpenCode", "PlaySound",
-        "GuiRead", "GuiClick"
+        "GuiRead", "GuiClick", "CaptureScreen"
     ];
 
     private string BuildRegistrationJson()

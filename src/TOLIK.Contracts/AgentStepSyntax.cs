@@ -18,10 +18,12 @@ public static class AgentStepSyntax
     public const string GuiRead = "gui_read:";
     public const string GuiClick = "gui_click:";
     public const string VerifyGui = "verify_gui:";
+    public const string CaptureScreen = "capture_screen:";
 
     public static readonly IReadOnlyList<string> Prefixes =
     [
         ReadFile, ListDirectory, GetProcessStatus, RunProcess,
-        RunCodex, RunOpenCode, RunBuild, RunTests, GuiRead, GuiClick, VerifyGui
+        RunCodex, RunOpenCode, RunBuild, RunTests, GuiRead, GuiClick, VerifyGui,
+        CaptureScreen
     ];
 }

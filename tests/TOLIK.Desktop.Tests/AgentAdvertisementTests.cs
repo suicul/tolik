@@ -35,6 +35,7 @@ public sealed class AgentAdvertisementTests
     [Theory]
     [InlineData("GuiRead")]
     [InlineData("GuiClick")]
+    [InlineData("CaptureScreen")]
     public void Gui_action_pair_is_advertised(string name)
     {
         Assert.Contains(name, WindowsAgent.AdvertisedCapabilities, StringComparer.Ordinal);

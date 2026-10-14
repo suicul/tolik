@@ -1747,6 +1747,16 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                         $"verify mismatch: expected '{parsed.Expectation}' in: {actual}");
                 return actual;
             }
+            // CU-1: the screen capture — the argument is the target DIRECTORY (under
+            // the agent's allowed roots; the provider RE-GUARDS it — §50, the wire
+            // could carry anything). Bounded: non-empty, ≤512 chars.
+            const string captureScreenPrefix = AgentStepSyntax.CaptureScreen;
+            if (step.Action.StartsWith(captureScreenPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var directory = step.Action[captureScreenPrefix.Length..].Trim();
+                if (directory.Length == 0 || directory.Length > 512) throw new ArgumentException("capture_screen requires a target directory.");
+                return await DispatchGuardedAsync(AgentCapability.CaptureScreen, directory);
+            }
             throw new UnauthorizedAccessException("Action is not available through the bounded Agent dispatcher.");
         }, executionCancellation.Token);
         if (!lifecycle.Complete(taskId, $"steps={results.Count}"))
