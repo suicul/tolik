@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TOLIK.Desktop\TOLIK.Desktop.csproj" />
+    <!-- CU-6 GUI actions v1: the provider lives in the Agent; the STA integration
+         tests drive it against a REAL WPF window via real UIA. -->
+    <ProjectReference Include="..\..\src\TOLIK.Agent\TOLIK.Agent.csproj" />
   </ItemGroup>
 
 </Project>

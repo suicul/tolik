@@ -15,10 +15,12 @@ public static class AgentStepSyntax
     public const string RunOpenCode = "run_opencode:";
     public const string RunBuild = "run_build:";
     public const string RunTests = "run_tests:";
+    public const string GuiRead = "gui_read:";
+    public const string GuiClick = "gui_click:";
 
     public static readonly IReadOnlyList<string> Prefixes =
     [
         ReadFile, ListDirectory, GetProcessStatus, RunProcess,
-        RunCodex, RunOpenCode, RunBuild, RunTests
+        RunCodex, RunOpenCode, RunBuild, RunTests, GuiRead, GuiClick
     ];
 }

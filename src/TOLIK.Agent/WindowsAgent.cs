@@ -524,6 +524,8 @@ public sealed class WindowsAgent
                 AgentCapability.RunTests => await RunDotnetAsync("test", command.Argument, cancellationToken),
                 AgentCapability.RunCodex => await RunAssistantCliAsync("codex", command.Argument, cancellationToken),
                 AgentCapability.RunOpenCode => await RunAssistantCliAsync("opencode", command.Argument, cancellationToken),
+                AgentCapability.GuiRead => GuiAutomationProvider.Read(command.Argument),
+                AgentCapability.GuiClick => GuiAutomationProvider.Click(command.Argument),
                 _ => throw new UnauthorizedAccessException("Agent command capability is not implemented.")
             };
             response = new(command.CommandId, command.AgentId, CommandOutcome.Completed, result, null);

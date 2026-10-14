@@ -38,6 +38,14 @@ public enum AgentCapability
     PlaySound,
     /// <summary>Captures the screen (CU-1 foundation) — reads, never modifies; privacy-sensitive (§50).</summary>
     CaptureScreen,
+    /// <summary>Reads a UI element's value/state by its bounded target spec (CU-6 GUI
+    /// actions v1) — READ_ONLY perception; privacy-sensitive (§50: reads the user's
+    /// active window — the same trust class as CaptureScreen).</summary>
+    GuiRead,
+    /// <summary>Invokes a UI element (button/toggle) by its bounded target spec (CU-6
+    /// GUI actions v1) — MODIFY: a click changes UI state. Semantic addressing only
+    /// (automation_id/name — NEVER coordinates; SkillStore parity).</summary>
+    GuiClick,
     /// <summary>Installs a TOLIK self-update (D2 Repair Mode) — CRITICAL: the signed
     /// artifact + the integrity verification + the MFA confirmation, always.</summary>
     InstallTolikUpdate

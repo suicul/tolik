@@ -1692,6 +1692,25 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                 if (path.Length == 0 || path.Length > 512) throw new ArgumentException("run_tests requires a project path.");
                 return await DispatchGuardedAsync(AgentCapability.RunTests, path);
             }
+            // CU-6 GUI actions v1: semantic addressing ONLY (automation_id/name — never
+            // coordinates, SkillStore parity). The same bounded target spec for read and
+            // click; the Agent resolves it against the interactive session's UI. The
+            // authorization pipeline above is unchanged (GuiRead = ReadOnly, GuiClick =
+            // Modify + confirmation).
+            const string guiReadPrefix = AgentStepSyntax.GuiRead;
+            if (step.Action.StartsWith(guiReadPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var target = step.Action[guiReadPrefix.Length..].Trim();
+                if (!GuiTargetSpec.IsWellFormed(target)) throw new ArgumentException("gui_read requires a bounded target: automation_id=<id> or name=<text>.");
+                return await DispatchGuardedAsync(AgentCapability.GuiRead, target);
+            }
+            const string guiClickPrefix = AgentStepSyntax.GuiClick;
+            if (step.Action.StartsWith(guiClickPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                var target = step.Action[guiClickPrefix.Length..].Trim();
+                if (!GuiTargetSpec.IsWellFormed(target)) throw new ArgumentException("gui_click requires a bounded target: automation_id=<id> or name=<text>.");
+                return await DispatchGuardedAsync(AgentCapability.GuiClick, target);
+            }
             throw new UnauthorizedAccessException("Action is not available through the bounded Agent dispatcher.");
         }, executionCancellation.Token);
         if (!lifecycle.Complete(taskId, $"steps={results.Count}"))
