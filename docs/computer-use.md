@@ -4,6 +4,27 @@ PRE-GENESIS. Не имплементируется этим запросом. А
 Компаньон: docs/governance.md (capability registry, autonomy policy, broker —
 исполнение Computer Use идёт ЧЕРЕЗ них, никаких параллельных систем).
 
+## IMPLEMENTATION STATUS (14.10.2026, PLAN REFORM pre-Genesis)
+
+| CU | Статус |
+|---|---|
+| CU-3 Closed loop | ✅ WIRED: ClosedLoopRunner.Verify в execute-пути; шаг `verify_gui:<target>;expect=<substring>` — Verified/Mismatch, честный провал с фактическим состоянием; bounded retry живёт в плане (click;verify;click;verify — никогда бесконечный клик-луп) |
+| CU-5 Skills | ✅ LIVE: SkillRecorder — завершённый gui-прогон с ПАРАМИ act+verify → workflow-skill (SuccessfulUse, 0.5); повтор +0.1; провал −0.2; провал неизвестного — ничего. `GET /skills`, owner `POST /skills/{app}/{id}/disable`. Инвариант: только ВЕРИФИЦИРОВАННЫЕ workflow становятся скиллами (вслепую — никогда) |
+| CU-6 v1 executor | ✅ LIVE: GuiRead (ReadOnly) / GuiClick (Modify + подтверждение) через UIA (WindowsDesktop FrameworkReference, ноль NuGet); ТОЛЬКО семантическая адресация (`automation_id=`/`name=`, GuiTargetSpec, ≤128/≤256, без wildcards/координат); Invoke→Toggle→Select, честный отказ без паттернов; агент ПЕРЕпарсивает спеку (defense in depth, §23) |
+| Подтверждение Modify | ✅ LIVE: park → owner approve → RequeueForExecution (Paused→Pending) → re-execute; confirmation поглощается один раз; критичные (MFA) по-прежнему требуют strong auth |
+| CU-1 Screen capture | Capability зарегистрирован (Low risk), провайдера в агенте НЕТ — не диспетчеризуется (fail closed) |
+| CU-2 Observation (OCR/vision) | 🔲 план (этот документ §3) |
+| CU-4 Browser | 🔲 план (нужен браузерный стек — зависимость не принята) |
+| CU-6..8 Exploration/Demonstration/Adaptation | 🔲 живое использование (SkillStore заполняется реальными workflow) |
+| CU-9 Long-running / CU-10 Cephalon / CU-GA Games | 🔲 план |
+
+Живые демонстрации (14.10.2026, полный pipeline): негативный путь (элемент
+отсутствует → честный not found → задача Failed), позитивный (gui_read вернул
+состояние элемента), полный замкнутый контур с подтверждением (park → approve →
+click → verify → Completed), учебная лестница (2 цикла → скилл 0.5 → 0.6,
+trusted). Попутные фиксы: анонс capability агентом (единый список + инварианты),
+RequeueForExecution (шов approve/re-execute).
+
 ## 0. Аудит: что есть / что переиспользовать
 
 | Компонент | Статус |

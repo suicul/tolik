@@ -1854,6 +1854,24 @@ app.MapGet("/skills", async (HttpContext context, IdentityService identity, TOLI
     }).ToList();
     return Results.Ok(new { count = skills.Count, skills });
 });
+// CU-5 management: the OWNER disables a mis-learned skill — the status flips to
+// Disabled → NEVER trusted for autonomous again, regardless of the confidence.
+// Skills are DATA; this is system-level curation, hence owner-only.
+app.MapPost("/skills/{application}/{id}/disable", async (string application, string id, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Authorization.SkillStore skillStore, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "skill.disable", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+    var disabled = skillStore.Disable(application, id);
+    await audit.WriteAsync((Guid)context.Items["CorrelationId"]!, "skill.disable", disabled ? "ALLOW" : "DENY", disabled ? "disabled" : "skill_not_found", cancellationToken);
+    return disabled
+        ? Results.Ok(new { disabled = true, application, id })
+        : Results.NotFound(new { error = "skill_not_found" });
+});
 app.MapPost("/memory", async (MemoryRequest request, HttpContext context, IdentityService identity, ScopedMemory memory, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();

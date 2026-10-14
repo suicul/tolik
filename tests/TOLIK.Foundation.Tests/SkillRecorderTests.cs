@@ -127,4 +127,27 @@ public sealed class SkillRecorderTests
         // Below the trust threshold — never trusted for autonomous after the failures.
         Assert.False(store.IsTrustedForAutonomous(SkillRecorder.WindowsApplication, SkillRecorder.SkillId(ClosedLoopSteps)));
     }
+
+    [Fact]
+    public void Disable_kills_trust_even_at_full_confidence()
+    {
+        var store = new SkillStore();
+        // Drive the skill to the cap: fully trusted.
+        for (var i = 0; i < 6; i++)
+            SkillRecorder.RecordOutcome(store, "Submit the form", ClosedLoopSteps, success: true);
+        var id = SkillRecorder.SkillId(ClosedLoopSteps);
+        Assert.True(store.IsTrustedForAutonomous(SkillRecorder.WindowsApplication, id));
+
+        // The owner disables it: the status flips to Disabled → NEVER trusted again,
+        // regardless of the confidence. (The management surface for mis-learned skills.)
+        Assert.True(store.Disable(SkillRecorder.WindowsApplication, id));
+        Assert.Equal(SkillStatus.Disabled, store.TryGet(SkillRecorder.WindowsApplication, id)!.Status);
+        Assert.False(store.IsTrustedForAutonomous(SkillRecorder.WindowsApplication, id));
+
+        // Re-disabling is a no-op success (the status is already Disabled).
+        Assert.True(store.Disable(SkillRecorder.WindowsApplication, id));
+
+        // An unknown skill: refused.
+        Assert.False(store.Disable(SkillRecorder.WindowsApplication, "nosuchskill"));
+    }
 }

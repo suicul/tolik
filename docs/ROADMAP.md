@@ -215,18 +215,30 @@ PRG-5  MI-7/MI-8/MI-9-seed + RA-3: proactive policy + self-model + seed + reward
        (Genesis seed МЕХАНИЗМ — активация на церемонии), **RA-3 остальное**
        (Cosmetic/Creative/SharedExperience типы — additive; Cephalon-интеграция)
 PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование (действия через authorization)
-       — ЧАСТИЧНО DONE 13.10.2026 (882/882; оркестратор): **CU-3 Closed-loop**
-       (9361c44): ClosedLoopRunner — VERIFY по semantic state (клик никогда не
-       считается успешным без перехода состояния); bounded retries (3 → STOP →
-       explain → ask owner); GuiActionRisk tiers (LOW/MEDIUM/HIGH/CRITICAL →
-       существующий AutonomyPolicy); **CU-5 Skill Learning** (9361c44): SkillStore
-       — semantic skills (role/automation_id, НИКОГДА координаты), confidence
-       lifecycle (LOW_CONFIDENCE < 0.6 → нет risky autonomous; successful
-       reproduction raises, failure lowers; Disabled никогда не trusted),
-       provenance (exploration/demonstration/successful_use), capacity 64 REJECTS.
-       Остаток: **CU-4** (browser automation), **CU-6..8** (exploration/
-       demonstration/skill adaptation — полный цикл), **CU-9** (long-running),
-       **CU-10** (Cephalon интеграция), **CU-GA** (game layer)
+       — ЧАСТИЧНО DONE 13-14.10.2026 (1042/1042; оркестратор): **CU-3 Closed-loop**
+       (9361c44 + b5aa671): ClosedLoopRunner — VERIFY по semantic state (клик никогда
+       не считается успешным без перехода состояния) — **WIRED в execute-путь**:
+       шаг `verify_gui:<target>;expect=<substring>` → Verified/Mismatch → честный
+       провал; bounded retries живёт в плане (3 → STOP); GuiActionRisk tiers
+       (LOW/MEDIUM/HIGH/CRITICAL → существующий AutonomyPolicy); **CU-5 Skill
+       Learning** (9361c44 + 023e5ba): SkillStore — semantic skills (role/
+       automation_id, НИКОГДА координаты), confidence lifecycle (LOW_CONFIDENCE
+       < 0.6 → нет risky autonomous; successful reproduction raises, failure
+       lowers; Disabled никогда не trusted), provenance, capacity 64 REJECTS —
+       **LIVE: SkillRecorder** — завершённый gui-прогон с ПАРАМИ act+verify →
+       workflow-skill (0.5 → +0.1 повтор → −0.2 провал; провал неизвестного —
+       ничего); `GET /skills`; owner disable; **CU-6 v1 executor** (5297327):
+       GuiRead (ReadOnly) / GuiClick (Modify + подтверждение) через UIA — ТОЛЬКО
+       семантическая адресация (GuiTargetSpec), Invoke→Toggle→Select, честный
+       отказ; **confirmation flow** (7847a39): park → owner approve →
+       RequeueForExecution (Paused→Pending) → re-execute. Живые демонстрации:
+       негативный/позитивный пути, полный контур с подтверждением, лестница
+       обучения (2 цикла → 0.5 → 0.6). Попутные фиксы: анонс capability агентом,
+       шов approve/re-execute.
+       Остаток: **CU-1 провайдер** (capture зарегистрирован, диспетчеризации нет),
+       **CU-2** (OCR/vision observation), **CU-4** (browser automation), **CU-6..8**
+       (exploration/demonstration/skill adaptation — живое использование),
+       **CU-9** (long-running), **CU-10** (Cephalon интеграция), **CU-GA** (game layer)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие
        — ЧАСТИЧНО DONE 13.10.2026 (882/882; оркестратор): **SE-2** (76ec5a4):
        ExperimentLab — self-optimization lifecycle (hypothesis → N candidates →
