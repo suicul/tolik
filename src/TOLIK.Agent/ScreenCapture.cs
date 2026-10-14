@@ -21,7 +21,7 @@ namespace TOLIK.Agent;
 /// </summary>
 internal static class ScreenCapture
 {
-    [DllImport("gdi32.dll", SetLastError = true)]
+    [DllImport("user32.dll")]
     private static extern IntPtr GetDC(IntPtr hwnd);
 
     [DllImport("user32.dll")]

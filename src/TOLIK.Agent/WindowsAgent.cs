@@ -539,8 +539,11 @@ public sealed class WindowsAgent
         {
             response = new(command.CommandId, command.AgentId, CommandOutcome.Failed, null, ex.Message);
         }
-        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or Win32Exception)
+        catch (Exception ex) when (ex is IOException or ArgumentException or InvalidOperationException or Win32Exception
+                                  or EntryPointNotFoundException or DllNotFoundException)
         {
+            // A missing entry point / DLL is a deployment/assembly issue — the honest
+            // Failed outcome (never a hung command that burns the task budget).
             response = new(command.CommandId, command.AgentId, CommandOutcome.Failed, null, ex.Message);
         }
 
