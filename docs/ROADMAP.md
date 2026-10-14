@@ -235,8 +235,7 @@ PRG-6  CU-3..CU-10 + CU-GA: компьютерное использование 
        негативный/позитивный пути, полный контур с подтверждением, лестница
        обучения (2 цикла → 0.5 → 0.6). Попутные фиксы: анонс capability агентом,
        шов approve/re-execute.
-       Остаток: **CU-1 провайдер** (capture зарегистрирован, диспетчеризации нет),
-       **CU-2** (OCR/vision observation), **CU-4** (browser automation), **CU-6..8**
+       Остаток: **CU-2** (OCR/vision observation), **CU-4** (browser automation), **CU-6..8**
        (exploration/demonstration/skill adaptation — живое использование),
        **CU-9** (long-running), **CU-10** (Cephalon интеграция), **CU-GA** (game layer)
 PRG-7  SE-2/SE-3/SE-5/SE-6/SE-7: экспериментальная лаборатория + само-развитие

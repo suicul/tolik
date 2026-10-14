@@ -117,6 +117,13 @@ AN-P7 Presence — Presence Manager (IP-4), подтверждаемая пер�
   runtime permission. НИКОГДА постоянный тяжёлый процесс ради соединения; Doze/
   App Standby учитываются; непрерывное прослушивание НЕ обещается (не реализовано
   и не разрешено). Локальная LLM НИКОГДА по умолчанию.
+- **Голос ума (MI-7/CA-5, реализовано 14.10.2026)**: канал «Голос TOLIK» —
+  `proactive_mind` (ум заметил паттерн и сообщает — уже дважды загейчен Core-side:
+  ProactivePolicy + E2 NotificationGate) и `presence_return` (сводка «что было пока
+  тебя не было» при reconnect). Оба — системные уведомления (AN-2 паттерн,
+  additive default no-op слушатели). Уведомления информируют — никогда не
+  авторизуют (§23); payload'ы privacy-by-construction (фиксированные kinds +
+   generic summaries).
 
 ## 8. Pre-Genesis граница
 

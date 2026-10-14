@@ -12,7 +12,7 @@ PRE-GENESIS. Не имплементируется этим запросом. А
 | CU-5 Skills | ✅ LIVE: SkillRecorder — завершённый gui-прогон с ПАРАМИ act+verify → workflow-skill (SuccessfulUse, 0.5); повтор +0.1; провал −0.2; провал неизвестного — ничего. `GET /skills`, owner `POST /skills/{app}/{id}/disable`. Инвариант: только ВЕРИФИЦИРОВАННЫЕ workflow становятся скиллами (вслепую — никогда) |
 | CU-6 v1 executor | ✅ LIVE: GuiRead (ReadOnly) / GuiClick (Modify + подтверждение) через UIA (WindowsDesktop FrameworkReference, ноль NuGet); ТОЛЬКО семантическая адресация (`automation_id=`/`name=`, GuiTargetSpec, ≤128/≤256, без wildcards/координат); Invoke→Toggle→Select, честный отказ без паттернов; агент ПЕРЕпарсивает спеку (defense in depth, §23) |
 | Подтверждение Modify | ✅ LIVE: park → owner approve → RequeueForExecution (Paused→Pending) → re-execute; confirmation поглощается один раз; критичные (MFA) по-прежнему требуют strong auth |
-| CU-1 Screen capture | Capability зарегистрирован (Low risk), провайдера в агенте НЕТ — не диспетчеризуется (fail closed) |
+| CU-1 Screen capture | ✅ LIVE: BitBlt P/Invoke (gdi32/user32 — ноль NuGet) → локальный 24bpp BMP под allowed roots; результат шага — путь + размеры (изображение никогда не в wire, §50); цель ре-гардится (§23); шаг `capture_screen:<dir>`; live-верифицирован (BMP на диске: BM/offset/размеры сходятся) |
 | CU-2 Observation (OCR/vision) | 🔲 план (этот документ §3) |
 | CU-4 Browser | 🔲 план (нужен браузерный стек — зависимость не принята) |
 | CU-6..8 Exploration/Demonstration/Adaptation | 🔲 живое использование (SkillStore заполняется реальными workflow) |
