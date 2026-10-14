@@ -22,6 +22,7 @@ object TolikNotifier {
 
     private const val CHANNEL_TASKS = "tolik_tasks"
     private const val CHANNEL_REMINDERS = "tolik_reminders"
+    private const val CHANNEL_MIND = "tolik_mind"
 
     fun ensureChannels(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -36,8 +37,14 @@ object TolikNotifier {
             context.getString(R.string.tab_chat),
             NotificationManager.IMPORTANCE_HIGH,
         )
+        val mind = NotificationChannel(
+            CHANNEL_MIND,
+            context.getString(R.string.channel_mind),
+            NotificationManager.IMPORTANCE_HIGH,
+        )
         manager.createNotificationChannel(tasks)
         manager.createNotificationChannel(reminders)
+        manager.createNotificationChannel(mind)
     }
 
     fun canPost(context: Context): Boolean =
@@ -80,4 +87,15 @@ object TolikNotifier {
 
     fun notifyReminder(context: Context, id: Int, text: String) =
         notifyText(context, CHANNEL_REMINDERS, id, context.getString(R.string.app_name), text)
+
+    /** The mind's voice (MI-7): the proactive message — the already double-gated
+     *  output (ProactivePolicy + the E2 NotificationGate Core-side). The text is
+     *  TOLIK's own message, never caller data (§23). */
+    fun notifyMind(context: Context, id: Int, text: String) =
+        notifyText(context, CHANNEL_MIND, id, context.getString(R.string.notify_mind_title), text)
+
+    /** The return digest (CA-5): what happened while the owner was away (privacy
+     *  by construction: fixed kinds + generic summaries only). */
+    fun notifyPresenceReturn(context: Context, id: Int, summary: String) =
+        notifyText(context, CHANNEL_MIND, id, context.getString(R.string.notify_return_title), summary)
 }

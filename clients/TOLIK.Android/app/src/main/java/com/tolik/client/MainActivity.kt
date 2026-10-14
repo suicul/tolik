@@ -666,6 +666,30 @@ class MainActivity : AppCompatActivity(), VoiceSessionController.View {
                     )
                 }
             }
+
+            // The mind's voice (MI-7): the already double-gated proactive message —
+            // the owner sees it as a system notification (AN-2). The text is TOLIK's
+            // own message, never caller data (§23).
+            override fun onProactiveMind(event: TolikWsProactiveMind) {
+                runOnUiThread {
+                    TolikNotifier.notifyMind(
+                        this@MainActivity,
+                        event.at?.hashCode() ?: event.text?.hashCode() ?: 0,
+                        event.text ?: "",
+                    )
+                }
+            }
+
+            // The return digest (CA-5): what happened while the owner was away.
+            override fun onPresenceReturn(event: TolikWsPresenceReturn) {
+                runOnUiThread {
+                    TolikNotifier.notifyPresenceReturn(
+                        this@MainActivity,
+                        event.at?.hashCode() ?: event.summary?.hashCode() ?: 0,
+                        event.summary ?: "",
+                    )
+                }
+            }
         })
     }
 

@@ -455,6 +455,26 @@ private class TolikEventSocket(
                         )
                     )
                 }
+                // The mind's voice (MI-7) + the return digest (CA-5): both arrive on
+                // the events WS now (ONE DESKTOP REPO, the events channel). The
+                // transport routes them to the additive listeners; the payloads are
+                // already policed Core-side (the gates + privacy by construction).
+                if (payload.optStringOrNull("type") == "proactive_mind") {
+                    listener.onProactiveMind(
+                        TolikWsProactiveMind(
+                            text = payload.optStringOrNull("text"),
+                            at = payload.optStringOrNull("at"),
+                        )
+                    )
+                }
+                if (payload.optStringOrNull("type") == "presence_return") {
+                    listener.onPresenceReturn(
+                        TolikWsPresenceReturn(
+                            summary = payload.optStringOrNull("summary"),
+                            at = payload.optStringOrNull("at"),
+                        )
+                    )
+                }
             }
         }
     }

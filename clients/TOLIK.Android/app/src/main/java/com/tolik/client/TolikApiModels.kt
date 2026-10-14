@@ -182,6 +182,15 @@ data class TolikWsTaskEvent(val taskId: String, val kind: String?, val detail: S
 
 data class TolikWsProactive(val id: String?, val text: String?, val priority: String?, val dueAt: String?, val reason: String?)
 
+/** The mind's voice (MI-7): TOLIK noticed something (e.g. a failure pattern) and
+ * proactively tells the owner. Gated twice Core-side (ProactivePolicy + the E2
+ * NotificationGate) — the arrival here is the already-policed output. */
+data class TolikWsProactiveMind(val text: String?, val at: String?)
+
+/** The return digest (CA-5): what happened while the owner was away, pushed on
+ * (re)connect. Privacy by construction: fixed kinds + generic summaries only. */
+data class TolikWsPresenceReturn(val summary: String?, val at: String?)
+
 // ─── Additive transport surface (extends TolikApiTransport; additive only) ───
 
 /** Listener for the SSE voice turn stream. */
@@ -217,6 +226,16 @@ interface TolikEventsListener {
      * ignores them safely. The expression is DATA to render, never authority
      * (§23). Default no-op so pre-existing implementations stay source-compatible. */
     fun onCephalonExpression(expression: ExpressionOutput) {}
+
+    /** The mind's voice (MI-7): a proactive message TOLIK chose to surface (the
+     *  double-gated output — the arrival here is already policed; the transport
+     *  ignores malformed/unknown payloads safely). Default no-op so
+     *  pre-existing implementations stay source-compatible (AN-P2 pattern). */
+    fun onProactiveMind(event: TolikWsProactiveMind) {}
+
+    /** The return digest (CA-5): what happened while the owner was away. Default
+     *  no-op (AN-P2 pattern). */
+    fun onPresenceReturn(event: TolikWsPresenceReturn) {}
 }
 
 interface TolikEventsStreamHandle {

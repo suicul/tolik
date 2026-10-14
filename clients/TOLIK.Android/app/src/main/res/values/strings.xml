@@ -6,6 +6,12 @@
     <string name="tab_voice">Голос</string>
     <string name="tab_tasks">Задачи</string>
 
+    <!-- Notifications (AN-2): the mind's voice — proactive messages and the
+         return digests (what happened while you were away). -->
+    <string name="channel_mind">Голос TOLIK</string>
+    <string name="notify_mind_title">TOLIK</string>
+    <string name="notify_return_title">TOLIK: пока тебя не было</string>
+
     <!-- Status header -->
     <string name="status_disconnected">Нет связи с Core</string>
     <string name="status_connected">Связь установлена</string>
