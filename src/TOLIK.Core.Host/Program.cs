@@ -1511,7 +1511,7 @@ app.MapGet("/tasks/{taskId:guid}/confirmations", async (Guid taskId, HttpContext
         effectiveRisk = x.EffectiveRisk.ToString(), x.RequiredMethod, x.ExpiresAt
     }));
 });
-app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", async (Guid taskId, Guid confirmationId, HttpContext context, IdentityService identity, [FromServices] TOLIK.Infrastructure.Authorization.ConfirmationStore confirmations, AuditWriter audit, CancellationToken cancellationToken) =>
+app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", async (Guid taskId, Guid confirmationId, HttpContext context, IdentityService identity, [FromServices] TOLIK.Infrastructure.Authorization.ConfirmationStore confirmations, TaskLifecycle lifecycle, AuditWriter audit, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1533,6 +1533,11 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
     }
     if (!confirmations.Approve(confirmationId))
         return Results.Conflict(new { error = "confirmation_invalid_state" });
+            // Live-loop fix (CU-6): the confirmation park left the task Paused; the designed
+            // continuation is the OWNER re-running the execute request - which needs the
+            // task PENDING (TryStart is Pending -> Running). Requeue on approval.
+            if (!lifecycle.RequeueForExecution(taskId))
+                return Results.Conflict(new { error = "task_not_parked" });
     await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "confirmation.approve", "ALLOW", "owner_approved", principal,
         confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "approved", cancellationToken);
     return Results.Ok(new { approved = true, confirmationId, note = "Re-run the execute request; the bound confirmation will be consumed once." });

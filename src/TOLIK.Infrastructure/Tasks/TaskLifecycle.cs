@@ -75,6 +75,14 @@ public sealed class TaskLifecycle
         Publish(taskId, "TaskResumed", reason);
         return true;
     }
+    /// <summary>
+    /// Confirmation-approval requeue (§9 live-loop fix): a task parked by
+    /// ConfirmationRequiredException goes Paused → Pending, so the owner's re-run of
+    /// the execute request passes TryStart (Pending → Running). The /resume endpoint's
+    /// Paused → Running is for owner/supervisor pauses — a re-executable confirmation
+    /// park needs PENDING, because the execute endpoint is the thing that runs the plan.
+    /// </summary>
+    public bool RequeueForExecution(Guid id) => Transition(id, TolikTaskStatus.Paused, TolikTaskStatus.Pending);
     public void ReportProgress(Guid id, string detail) => Publish(id, "TaskProgress", detail);
     /// <summary>
     /// Attaches the explicit bounded scope (docs/continuous-autonomy.md CA-0/§4) to a task —
