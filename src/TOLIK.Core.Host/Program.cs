@@ -1357,6 +1357,20 @@ app.MapPost("/tasks", async (TaskRequest request, HttpContext context, IdentityS
         AgentCapability.RunBuild, ToolRiskLevel.LowRisk, "task", "execution_unavailable", cancellationToken);
     return Results.Accepted($"/tasks/{task.Id}", task);
 });
+// The task list (the owner's tasks, newest first, bounded) — the management surface.
+app.MapGet("/tasks", async (HttpContext context, IdentityService identity, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    await using var db = await factory.CreateDbContextAsync(cancellationToken);
+    var tasks = await db.Tasks
+        .Where(x => x.UserId == principal.UserId)
+        .OrderByDescending(x => x.CreatedAt)
+        .Take(50)
+        .Select(x => new { x.Id, x.Description, x.Status, x.CreatedAt, x.CompletedAt })
+        .ToListAsync(cancellationToken);
+    return Results.Ok(new { count = tasks.Count, tasks });
+});
 app.MapGet("/tasks/{taskId:guid}", async (Guid taskId, HttpContext context, IdentityService identity, TaskLifecycle lifecycle, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
