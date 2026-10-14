@@ -3,11 +3,11 @@ namespace TOLIK.Agent;
 /// <summary>
 /// The bounded 24bpp BMP writer for CU-1 (the universally readable, dependency-free
 /// format). PURE LAYOUT — no P/Invoke, directly unit-testable: the header geometry
-/// (the two headers + the 4-byte-aligned rows), the bottom-up orientation (the
-/// first row of the DIB = the bottom of the screen = the first bytes of the pixel
-/// data), the BGR triplet layout (the classic GDI format). The writer faithfully
-/// serializes the rows in call order; the screen orientation belongs to the capture
-/// flow (GetDIBits row 0 is the bottom row).
+/// (the two headers + the 4-byte-aligned rows) and the faithful pixel-data copy.
+/// The capture flow reads the whole DIB in ONE GetDIBits call — the DIB is already
+/// bottom-up BGR (exactly the BMP pixel layout), so the file is the headers + the
+/// DIB bytes. A single call instead of a per-row loop (a 1080-row per-row P/Invoke
+/// sequence is slower than the task budget — the live smoke proved it).
 /// </summary>
 public static class ScreenCaptureBmp
 {
@@ -22,16 +22,19 @@ public static class ScreenCaptureBmp
     public static int FileSize(int width, int height) => HeaderSize + RowStride(width) * height;
 
     /// <summary>
-    /// Builds the BMP bytes. <paramref name="readRow"/> provides each row's stride-
-    /// length bytes (the BGR triplets + the padding) in screen order (row 0 = the
-    /// bottom); a short row fails honestly.
+    /// Builds the BMP bytes from the DIB pixel data (bottom-up BGR rows, the stride
+    /// exactly as RowStride). A short buffer fails honestly.
     /// </summary>
-    public static byte[] Build(int width, int height, Func<int, byte[]> readRow)
+    public static byte[] Build(int width, int height, byte[] pixelData)
     {
         if (width <= 0 || height <= 0)
             throw new ArgumentException("The BMP dimensions must be positive.");
 
         var stride = RowStride(width);
+        var pixelBytes = stride * height;
+        if (pixelData is null || pixelData.Length < pixelBytes)
+            throw new ArgumentException("The pixel data is shorter than the DIB geometry requires.");
+
         var buffer = new byte[FileSize(width, height)];
 
         // BITMAPFILEHEADER (14 bytes)
@@ -46,16 +49,9 @@ public static class ScreenCaptureBmp
         WriteInt32(buffer, 22, height);    // positive = bottom-up
         WriteInt16(buffer, 26, 1);         // the planes
         WriteInt16(buffer, 28, BitsPerPixel);
-        WriteInt32(buffer, 34, stride * height); // the pixel data size
+        WriteInt32(buffer, 34, pixelBytes); // the pixel data size
 
-        for (var y = 0; y < height; y++)
-        {
-            var row = readRow(y);
-            if (row.Length < stride)
-                throw new InvalidOperationException($"the row {y} is shorter than the stride ({row.Length} < {stride}).");
-            Array.Copy(row, 0, buffer, HeaderSize + y * stride, stride);
-        }
-
+        Array.Copy(pixelData, 0, buffer, HeaderSize, pixelBytes);
         return buffer;
     }
 

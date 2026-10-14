@@ -102,14 +102,15 @@ internal static class ScreenCapture
                         SelectObject(memory, previous);
                     }
 
-                    var bytes = ScreenCaptureBmp.Build(width, height, y =>
-                    {
-                        var row = new byte[ScreenCaptureBmp.RowStride(width)];
-                        if (!GetDIBitsRow(memory, bitmap, row, y, width))
-                            throw new InvalidOperationException($"capture_screen: the row {y} read failed.");
-                        return row;
-                    });
-                    File.WriteAllBytes(filePath, bytes);
+                    // ONE GetDIBits call for the whole DIB — it is already bottom-up
+                    // BGR (exactly the BMP pixel layout). The per-row loop was the
+                    // bottleneck (a 1080-row P/Invoke sequence exceeds the task
+                    // budget — the live smoke proved it).
+                    var pixelData = new byte[ScreenCaptureBmp.FileSize(width, height) - ScreenCaptureBmp.HeaderSize];
+                    var bmi = new BITMAPINFO { biSize = 40, biWidth = width, biHeight = height, biPlanes = 1, biBitCount = ScreenCaptureBmp.BitsPerPixel };
+                    if (!GetDIBits(memory, bitmap, 0, (uint)height, pixelData, ref bmi, 0))
+                        throw new InvalidOperationException("capture_screen: GetDIBits failed (the display refused the read).");
+                    File.WriteAllBytes(filePath, ScreenCaptureBmp.Build(width, height, pixelData));
                 }
                 finally
                 {
@@ -129,19 +130,11 @@ internal static class ScreenCapture
         return $"path={filePath};width={width};height={height}";
     }
 
-    /// <summary>Reads ONE row of the captured bitmap from the screen DC (a narrow
-    /// per-row read so the provider never materializes a second full-screen buffer).</summary>
     [DllImport("gdi32.dll", SetLastError = true)]
     private static extern bool GetDIBits(IntPtr hdc, IntPtr bmp, uint start, uint lines, [Out] byte[] bits, ref BITMAPINFO bmi, uint usage);
 
     [DllImport("gdi32.dll", SetLastError = true)]
     private static extern bool DeleteObject(IntPtr hobj);
-
-    private static bool GetDIBitsRow(IntPtr memory, IntPtr bitmap, byte[] row, int y, int width)
-    {
-        var bmi = new BITMAPINFO { biSize = (uint)ScreenCaptureBmp.HeaderSize - 14, biWidth = width, biHeight = 1, biPlanes = 1, biBitCount = ScreenCaptureBmp.BitsPerPixel };
-        return GetDIBits(memory, bitmap, (uint)y, 1, row, ref bmi, 0);
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFO
