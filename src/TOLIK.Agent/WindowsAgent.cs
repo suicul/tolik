@@ -843,10 +843,20 @@ public sealed class WindowsAgent
         return AgentPathGuard.ResolveAllowedPath(path, roots);
     }
 
+    /// <summary>The capabilities this agent advertises at registration. MUST stay in
+    /// sync with the dispatch switch in PollAndExecuteOnceAsync — a capability the
+    /// agent can execute but does not advertise is dead weight; one it advertises but
+    /// cannot execute would fail honestly at dispatch. The test pins the CU-6 pair.</summary>
+    internal static readonly string[] AdvertisedCapabilities =
+    [
+        "ReadFile", "ListDirectory", "GetProcessStatus", "RunProcess",
+        "RunBuild", "RunTests", "RunCodex", "RunOpenCode", "PlaySound",
+        "GuiRead", "GuiClick"
+    ];
+
     private string BuildRegistrationJson()
     {
-        var caps = new[] { "ReadFile", "ListDirectory", "GetProcessStatus", "RunProcess", "RunBuild", "RunTests", "RunCodex", "RunOpenCode", "PlaySound" };
-        var capsJson = string.Join(",", caps.Select(c => "\"" + c + "\""));
+        var capsJson = string.Join(",", AdvertisedCapabilities.Select(c => "\"" + c + "\""));
         var publicKeyJson = System.Text.Json.JsonSerializer.Serialize(PublicKeyPem);
         return "{\"agentId\":\"" + _agentId + "\",\"advertisedCapabilities\":[" + capsJson + "],\"publicKey\":" + publicKeyJson + "}";
     }
