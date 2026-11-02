@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Windows;
 using TOLIK.Desktop.Bridge;
+using TOLIK.Desktop.Chat;
 using TOLIK.Desktop.Presence;
 using TOLIK.Desktop.Speech;
 using WinForms = System.Windows.Forms;
@@ -36,6 +37,12 @@ public partial class App : Application
     private CoreHealthWatcher? _healthWatcher;
     private SpeechPresenter? _speech;
 
+    /// <summary>CE-5: the conversation surface — the main client's primary interaction.</summary>
+    private ChatWindow? _chat;
+    private ChatSession? _chatSession;
+    private CoreChatClient? _chatClient;
+    private CoreLinkOptions? _options;
+
     private WinForms.ToolStripMenuItem? _showItem;
     private WinForms.ToolStripMenuItem? _interactiveItem;
     private WinForms.ToolStripMenuItem? _debugItem;
@@ -70,6 +77,64 @@ public partial class App : Application
         StartSpeech();
         StartCoreLink();
         StartDesktopWatcher();
+        StartChat();
+
+        // The owner's normal entry point is the tray, but a flag opens the chat
+        // immediately — useful for the launcher, and for verifying the surface.
+        if (Environment.GetEnvironmentVariable("TOLIK_OPEN_CHAT") is "1" or "true")
+        {
+            ShowChat();
+        }
+    }
+
+    /// <summary>
+    /// CE-5: builds the conversation surface. The session owns the state, the chat
+    /// client owns the transport, and BOTH the overlay link and the chat share one
+    /// token source — one session, two surfaces, no duplicated credentials.
+    /// </summary>
+    private void StartChat()
+    {
+        if (_options is null || _linkTokens is null)
+        {
+            return;
+        }
+
+        var client = new CoreChatClient(_options, _linkTokens);
+        var session = new ChatSession(client);
+        var window = new ChatWindow(session);
+
+        _chatClient = client;
+        _chatSession = session;
+        _chat = window;
+
+        window.SetLinkLabel(DescribeLink(_window?.CephalonHost.CoreLink));
+        window.Closed += (_, _) =>
+        {
+            _chat = null;
+            _chatSession = null;
+            _chatClient?.Dispose();
+            _chatClient = null;
+        };
+    }
+
+    /// <summary>Opens the conversation window (created lazily, re-shown once closed).</summary>
+    private void ShowChat()
+    {
+        if (_chatSession is null && _options is not null && _linkTokens is not null)
+        {
+            StartChat();
+        }
+        if (_chat is null)
+        {
+            return;
+        }
+
+        if (!_chat.IsVisible)
+        {
+            _chat.Show();
+        }
+        _chat.Activate();
+        _chat.Focus();
     }
 
     /// <summary>CE-4 (PLAN REFORM PRG-2b): the desktop-awareness poll — the SAFE facts
@@ -145,6 +210,7 @@ public partial class App : Application
         _coreLink = client;
         _linkTokens = tokens;
         _linkCts = cts;
+        _options = options;
 
         _window.CephalonHost.CoreLink.EndpointLabel = options.BaseUri.Authority;
 
@@ -202,6 +268,7 @@ public partial class App : Application
         {
             _window.CephalonHost.OnCoreLinkState(snapshot);
         }
+        _chat?.SetLinkLabel(DescribeLink(_window?.CephalonHost.CoreLink));
         UpdateTrayText();
     }
 
@@ -212,6 +279,12 @@ public partial class App : Application
         _trayIcon = CreateTrayIcon();
 
         var menu = new WinForms.ContextMenuStrip();
+
+        var chatItem = new WinForms.ToolStripMenuItem("Открыть чат");
+        chatItem.Font = new Font(chatItem.Font, System.Drawing.FontStyle.Bold);
+        chatItem.Click += (_, _) => ShowChat();
+        menu.Items.Add(chatItem);
+        menu.Items.Add(new WinForms.ToolStripSeparator());
 
         _showItem = new WinForms.ToolStripMenuItem("Hide overlay");
         _showItem.Click += (_, _) => ToggleOverlayVisibility();
@@ -254,7 +327,7 @@ public partial class App : Application
             Visible = true,
             ContextMenuStrip = menu,
         };
-        tray.DoubleClick += (_, _) => ToggleOverlayVisibility();
+        tray.DoubleClick += (_, _) => ShowChat();
 
         return tray;
     }
@@ -320,16 +393,19 @@ public partial class App : Application
             return;
         }
 
-        string link = (_window?.CephalonHost.CoreLink) switch
-        {
-            { State: CoreLinkState.Connected, LastMode: { } coreMode } => $"Core: {coreMode}",
-            { State: CoreLinkState.Connected } => "Core: connected",
-            { State: CoreLinkState.Connecting } => "Core: connecting…",
-            { State: CoreLinkState.AuthRejected } => "AUTH REJECTED",
-            _ => "no Core connection",
-        };
-        _tray.Text = $"TOLIK — {_mode} · {link}";
+        _tray.Text = $"TOLIK — {_mode} · {DescribeLink(_window?.CephalonHost.CoreLink)}";
     }
+
+    /// <summary>One honest, token-free label for the Core link, shared by tray and chat.</summary>
+    private static string DescribeLink(ExpressionLinkPresenter? link) => link switch
+    {
+        null => "no Core connection",
+        { State: CoreLinkState.Connected, LastMode: { } coreMode } => $"Core: {coreMode}",
+        { State: CoreLinkState.Connected } => "Core: connected",
+        { State: CoreLinkState.Connecting } => "Core: connecting…",
+        { State: CoreLinkState.AuthRejected } => "AUTH REJECTED",
+        _ => "no Core connection",
+    };
 
     private void SetInteractive(bool interactive)
     {

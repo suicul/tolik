@@ -41,6 +41,16 @@ public sealed record CoreLinkOptions(Uri BaseUri, string SourceNote)
     /// <summary>The dev token endpoint (same-machine minting, opt-in on Core).</summary>
     public Uri LocalTokenUri => new(BaseUri, "/auth/local-token");
 
+    /// <summary>Text chat (authenticated). The answer carries no authority.</summary>
+    public Uri ChatUri => new(BaseUri, "/chat");
+
+    /// <summary>
+    /// Streaming voice turn (authenticated): audio in, SSE with text deltas and
+    /// synthesized audio out. The Windows client records from the PC microphone and
+    /// posts here; STT, speaker identification and TTS all happen inside Core/Voice.
+    /// </summary>
+    public Uri VoiceTurnStreamUri => new(BaseUri, "/voice/turn-stream");
+
     /// <summary>The read-only status endpoint (anonymous on Core). The desktop reads
     /// the REAL emergency-stop fact (<c>emergencyStopped</c>) from here — the speech
     /// gate must key off Core's authority, never a display-layer guess.</summary>
