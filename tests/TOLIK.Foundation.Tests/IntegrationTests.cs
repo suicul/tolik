@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +25,15 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = "tolik_test_" + Guid.NewGuid().ToString("N");
 
+    /// <summary>
+    /// Server-level connection (no database) shared by the per-test connection string and
+    /// the teardown path, so the two literals cannot drift apart.
+    /// </summary>
+    private const string ServerConnection =
+        "Host=localhost;Port=5432;Username=tolik;Password=TolikSecureP@ss2026!";
+
+    private string TestConnection => $"{ServerConnection};Database={_databaseName}";
+
     /// <summary>Optional out-of-band unlock code for LOCKED-state tests (TOLIK_SECURITY_UNLOCK_CODE).</summary>
     public string? UnlockCode { get; init; }
 
@@ -34,7 +43,7 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting flows into WebApplicationBuilder's initial configuration.
-        builder.UseSetting("ConnectionStrings:Postgres", $"Host=localhost;Port=5432;Database={_databaseName};Username=tolik;Password=TolikSecureP@ss2026!");
+        builder.UseSetting("ConnectionStrings:Postgres", TestConnection);
         builder.UseSetting("TOLIK_BOOTSTRAP_CODE", "TLK-BSTEP-2026-INIT");
         builder.UseSetting("TOLIK_OFFLINE_MODE", "true");
         builder.UseSetting("TOLIK_ALLOWED_ROOTS", "C:\\DEV");
@@ -72,6 +81,36 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
     /// on first boot (MigrateAsync on a missing database) — the test host is built exactly
     /// like production, via the base-class deferred-host flow.
     /// </summary>
+    /// <remarks>
+    /// LEAK FIX (01.11.2026): the unique test databases were never dropped — ~8500
+    /// leftovers accumulated to 68 GB and made every PostgreSQL restart fsync for
+    /// 15+ minutes. The factory now DROPS its database on dispose (best-effort: a
+    /// failed cleanup must never fail the test itself).
+    /// </remarks>
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        if (!disposing) return;
+        DropTestDatabase();
+    }
+
+    private void DropTestDatabase()
+    {
+        try
+        {
+            using var connection = new Npgsql.NpgsqlConnection($"{ServerConnection};Database=postgres");
+            connection.Open();
+            using var command = connection.CreateCommand();
+            // WITH (FORCE) terminates any lingering pool connections; the cast keeps
+            // the identifier quoted (the name is a generated GUID — never user input).
+            command.CommandText = $"DROP DATABASE IF EXISTS \"{_databaseName}\" WITH (FORCE)";
+            command.ExecuteNonQuery();
+        }
+        catch
+        {
+            // Best-effort teardown: a leaked DB is a hygiene issue, never a test failure.
+        }
+    }
 }
 
 /// <summary>Test TTS provider that returns empty audio (disabled TTS for testing).</summary>
