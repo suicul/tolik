@@ -17,6 +17,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- CE-5 voice: NAudio captures the PC microphone and plays Core's TTS chunks.
+         The same library and version the Windows Agent already uses (AGENTS §44:
+         do not add a dependency for a problem that is already solved). -->
+    <PackageReference Include="NAudio" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- CE-2: the renderer consumes the REAL shared expression contract (ExpressionMode).
          TOLIK.Contracts is a dependency-free plain library — no lane coupling beyond this. -->
     <ProjectReference Include="..\TOLIK.Contracts\TOLIK.Contracts.csproj" />

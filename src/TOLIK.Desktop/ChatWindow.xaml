@@ -115,17 +115,22 @@
                 BorderBrush="{StaticResource LineBrush}" BorderThickness="0,1,0,0" Padding="14,12">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <TextBox x:Name="Input" Grid.Column="0"
+                <Button x:Name="MicButton" Grid.Column="0" Content="🎤"
+                        Style="{StaticResource SendButton}" Margin="0,0,8,0"
+                        ToolTip="Нажмите и говорите — Толик слушает микрофон этого ПК"
+                        Click="OnMicClick" />
+                <TextBox x:Name="Input" Grid.Column="1"
                          Background="#0B1524" Foreground="#DCE6F5"
                          BorderBrush="{StaticResource LineBrush}" BorderThickness="1"
                          Padding="10,8" VerticalContentAlignment="Center"
                          AcceptsReturn="False" TextWrapping="NoWrap"
                          CaretBrush="#DCE6F5"
                          PreviewKeyDown="OnInputPreviewKeyDown" />
-                <Button x:Name="SendButtonControl" Grid.Column="1" Content="Отправить"
+                <Button x:Name="SendButtonControl" Grid.Column="2" Content="Отправить"
                         Style="{StaticResource SendButton}" Margin="10,0,0,0"
                         Click="OnSendClick" />
             </Grid>

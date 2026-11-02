@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Windows;
 using TOLIK.Desktop.Bridge;
 using TOLIK.Desktop.Chat;
+using TOLIK.Desktop.Voice;
 using TOLIK.Desktop.Presence;
 using TOLIK.Desktop.Speech;
 using WinForms = System.Windows.Forms;
@@ -41,6 +42,8 @@ public partial class App : Application
     private ChatWindow? _chat;
     private ChatSession? _chatSession;
     private CoreChatClient? _chatClient;
+    private VoiceTurnClient? _voiceClient;
+    private MicrophoneRecorder? _recorder;
     private CoreLinkOptions? _options;
 
     private WinForms.ToolStripMenuItem? _showItem;
@@ -89,8 +92,9 @@ public partial class App : Application
 
     /// <summary>
     /// CE-5: builds the conversation surface. The session owns the state, the chat
-    /// client owns the transport, and BOTH the overlay link and the chat share one
-    /// token source — one session, two surfaces, no duplicated credentials.
+    /// client owns the text transport, the voice client owns the spoken one. The
+    /// overlay link, the chat and the voice all share ONE token source — one session,
+    /// three surfaces, no duplicated credentials.
     /// </summary>
     private void StartChat()
     {
@@ -101,9 +105,13 @@ public partial class App : Application
 
         var client = new CoreChatClient(_options, _linkTokens);
         var session = new ChatSession(client);
-        var window = new ChatWindow(session);
+        var voice = new VoiceTurnClient(_options, _linkTokens);
+        var recorder = new MicrophoneRecorder();
+        var window = new ChatWindow(session, voice, recorder);
 
         _chatClient = client;
+        _voiceClient = voice;
+        _recorder = recorder;
         _chatSession = session;
         _chat = window;
 
@@ -114,6 +122,10 @@ public partial class App : Application
             _chatSession = null;
             _chatClient?.Dispose();
             _chatClient = null;
+            _voiceClient?.Dispose();
+            _voiceClient = null;
+            _recorder?.Dispose();
+            _recorder = null;
         };
     }
 
