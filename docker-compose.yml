@@ -37,7 +37,11 @@ services:
     environment:
       TOLIK_VOICE_PORT: 9660
       TOLIK_STT_ENGINE: faster-whisper
-      TOLIK_WHISPER_MODEL: base
+      # Owner decision 03.11.2026: medium on CPU. Measured on this machine: base
+      # misheard "Привет Толик, включи музыку..." entirely (0.35 s), medium got it
+      # right (2.36 s, 2.6 GB RAM). CPU keeps the RTX 3060 free for games; there is
+      # no cloud STT on the provider (checked: no audio models, 404 on /audio/transcriptions).
+      TOLIK_WHISPER_MODEL: ${TOLIK_WHISPER_MODEL:-medium}
       TOLIK_STT_DEVICE: cpu
       TOLIK_COSYVOICE_ROOT: ${TOLIK_COSYVOICE_ROOT:-}
       TOLIK_TTS_ENGINE: ${TOLIK_TTS_ENGINE:-auto}
