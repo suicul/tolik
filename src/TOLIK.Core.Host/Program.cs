@@ -176,8 +176,8 @@ if (app.Configuration.GetValue<bool>("TOLIK_DEV_AUTO_TOKEN", false))
 // (realtime hub is created before Build above — one shared instance everywhere)
 var soundboardLimiter = new SoundboardRateLimiter();
 
-// Apply pending EF migrations on startup (В§30: never alter schema without a migration).
-// Test databases created via EnsureCreated have tables but no __EFMigrationsHistory вЂ”
+// Apply pending EF migrations on startup (§30: never alter schema without a migration).
+// Test databases created via EnsureCreated have tables but no __EFMigrationsHistory —
 // those are skipped (Migrate would fail with "table already exists").
 await ApplyPendingMigrationsAsync(app.Services);
 
@@ -457,7 +457,7 @@ static async Task ApplyPendingMigrationsAsync(IServiceProvider services)
         if (!await db.Database.CanConnectAsync())
         {
             // First boot: MigrateAsync creates the database and applies the full pipeline.
-            logger.LogInformation("Database does not exist yet вЂ” creating schema via migrations (first boot).");
+            logger.LogInformation("Database does not exist yet — creating schema via migrations (first boot).");
             await db.Database.MigrateAsync();
             logger.LogInformation("Database created and migrated.");
             return;
@@ -480,7 +480,7 @@ static async Task ApplyPendingMigrationsAsync(IServiceProvider services)
         if (anyTableExists && !historyExists)
         {
             // EnsureCreated databases (integration tests) own their schema.
-            logger.LogInformation("Schema present without migration history (EnsureCreated database) вЂ” skipping Migrate.");
+            logger.LogInformation("Schema present without migration history (EnsureCreated database) — skipping Migrate.");
             return;
         }
 
@@ -514,20 +514,13 @@ static IResult AuthenticationRequired(HttpContext context)
     }, statusCode: StatusCodes.Status401Unauthorized);
 }
 
-/// <summary>Maps common Russian application names to Windows executables (intent normalization).</summary>
-static string ResolveAppAlias(string name) => name.Trim().ToLowerInvariant() switch
-{
-    "РєР°Р»cЊРєcѓР»cЏc‚РѕcЂ" or "calculator" => "calc.exe",
-    "Р±Р»РѕРєРЅРѕc‚" or "notepad" => "notepad.exe",
-    "РїРµР№РЅc‚" or "РїР°РёРЅc‚" or "paint" or "cЂРёcРѕРІР°Р»РєР°" => "mspaint.exe",
-    "РїcЂРѕРІРѕРґРЅРёРє" or "explorer" or "c„Р°Р№Р»c‹" => "explorer.exe",
-    "Р±cЂР°cѓР·РµcЂ" or "РёРЅc‚РµcЂРЅРµc‚" or "browser" => "msedge.exe",
-    "c‚РµcЂРјРёРЅР°Р»" or "РєРѕРЅcРѕР»cЊ" or "cmd" or "РєРѕРјР°РЅРґРЅР°cЏ cc‚cЂРѕРєР°" => "cmd.exe",
-    "powershell" or "РїcЂРѕРІРµcЂР°" => "powershell.exe",
-    "РґРёcРїРµc‚cРµcЂ Р·Р°РґР°c" or "task manager" => "taskmgr.exe",
-    "РЅР°cc‚cЂРѕР№РєРё" or "РїР°cЂР°РјРµc‚cЂc‹" or "settings" => "ms-settings:",
-    _ => name
-};
+/// <summary>
+/// Maps common Russian application names to Windows executables (intent normalization).
+/// The table lives in <see cref="TOLIK.Core.AppAliases"/> so it can be tested: these
+/// literals were once stored as mojibake, which silently made every Russian app name
+/// fall through unmatched while the English aliases kept working.
+/// </summary>
+static string ResolveAppAlias(string name) => TOLIK.Core.AppAliases.Resolve(name);
 
 /// <summary>
 /// Light policy check on the intent paths (docs/governance.md §1 gap-fix): /chat,
@@ -668,11 +661,11 @@ static async Task<IResult?> ProcessSimpleIntentAsync(
             // Voice answers stay short: top-3 facts (dialogue logs are not facts).
             var facts = found.Where(m => m.Source is not ("chat.user" or "voice.user" or "chat.assistant" or "voice.assistant"))
                 .Take(3)
-                .Select(m => m.Content.Length > 120 ? m.Content[..120] + "вЂ¦" : m.Content)
+                .Select(m => m.Content.Length > 120 ? m.Content[..120] + "…" : m.Content)
                 .ToList();
             var reply = facts.Count == 0
                 ? $"Не помню ничего про {query}."
-                : "Помню: " + string.Join(". Р Рµc‰c‘: ", facts);
+                : "Помню: " + string.Join(". И ещё: ", facts);
             return await SpeakIntentResponse(context, reply, query);
         }
         case ChatIntentKind.Reminder:
@@ -693,7 +686,7 @@ static async Task<IResult?> ProcessSimpleIntentAsync(
     }
     return null;
 
-    // Local helper: synth spoken confirmation so voice commands answer by voice (В§14).
+    // Local helper: synth spoken confirmation so voice commands answer by voice (§14).
     static async Task<IResult> SpeakIntentResponse(HttpContext context, string replyText, string transcription)
     {
         var gate = context.RequestServices.GetRequiredService<VoiceRuntimeGate>();
@@ -1540,7 +1533,7 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
             confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "denied", cancellationToken);
         return Results.StatusCode(StatusCodes.Status403Forbidden);
     }
-    // В§9: critical escalations require strong auth (MFA) вЂ” plain approval is not enough.
+    // §9: critical escalations require strong auth (MFA) — plain approval is not enough.
     if (confirmation.RequiresMfa)
     {
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "confirmation.approve", "DENY", "strong_auth_required", principal,
@@ -1593,7 +1586,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
             lifecycle.ReportProgress(taskId, $"step={currentStep}/{plan.Steps.Count};action={step.Action}");
 
             // Guarded dispatch: every step is authorized with its effective risk; escalations
-            // demand a bound confirmation (stage 2 of the interface/ port, В§11/T13).
+            // demand a bound confirmation (stage 2 of the interface/ port, §11/T13).
             async Task<string> DispatchGuardedAsync(AgentCapability capability, string resource)
             {
                 var declaredRisk = TOLIK.Infrastructure.Authorization.ConfirmationStore.DeclaredRiskFor(capability);
@@ -1807,7 +1800,7 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
     }
     catch (TOLIK.Infrastructure.Authorization.ConfirmationRequiredException ex)
     {
-        // Stage 2: the step is parked, not failed вЂ” approve and re-execute to continue.
+        // Stage 2: the step is parked, not failed — approve and re-execute to continue.
         lifecycle.Pause(taskId, $"awaiting_confirmation:{ex.Confirmation.Id}");
         var auditWriter = context.RequestServices.GetRequiredService<AuditWriter>();
         await auditWriter.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "task.confirmation", "DENY", "confirmation_required", principal,
@@ -2055,12 +2048,12 @@ app.MapPost("/tasks/{taskId:guid}/feedback", async (Guid taskId, TaskFeedbackReq
         request.Positive ? "positive_feedback" : "negative_feedback",
         principal, null, null, taskId.ToString("D"), request.Positive ? "positive" : "negative", cancellationToken);
 
-    // A comment becomes a candidate learned rule with moderate confidence (В§21: never
+    // A comment becomes a candidate learned rule with moderate confidence (§21: never
     // create dangerous permanent behavior from one ambiguous interaction).
     // Repeated identical feedback strengthens the existing rule instead of duplicating it.
     if (!string.IsNullOrWhiteSpace(request.Comment) && request.Comment.Length <= 2048)
     {
-        var prefix = request.Positive ? "РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ РѕРґРѕР±cЂРёР»: " : "РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ РїРѕРїcЂР°РІРёР»: ";
+        var prefix = request.Positive ? "Пользователь одобрил: " : "Пользователь поправил: ";
         var ruleText = prefix + request.Comment.Trim();
         var existing = await rules.FindByTextAsync(principal.UserId, ruleText, cancellationToken);
         if (existing is null)
@@ -2085,7 +2078,7 @@ app.MapPost("/audio/play", async (PlaySoundRequest request, HttpContext context,
     if (request is null || string.IsNullOrWhiteSpace(request.Category) || string.IsNullOrWhiteSpace(request.Name))
         return Results.BadRequest(new { error = "invalid_sound_request" });
 
-    // В§17: rate limited вЂ” no more than one reaction sound per 10 seconds per user.
+    // §17: rate limited — no more than one reaction sound per 10 seconds per user.
     if (!soundboardLimiter.TryAcquire(principal.UserId))
     {
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "sound.play", "DENY", "rate_limited", principal, AgentCapability.PlaySound, ToolRiskLevel.LowRisk, $"{request.Category}/{request.Name}", "denied", cancellationToken);
@@ -2114,15 +2107,15 @@ app.MapPost("/audio/play", async (PlaySoundRequest request, HttpContext context,
 });
 app.MapGet("/audio/library", (HttpContext context) =>
 {
-    // Lists the soundboard library shape (В§17); actual files are resolved by the Agent.
+    // Lists the soundboard library shape (§17); actual files are resolved by the Agent.
     return Results.Ok(new
     {
         categories = new[]
         {
-            new { name = "reactions", description = "РљРѕcЂРѕc‚РєРёРµ cЂРµР°Рєc†РёРё РЅР° c„cЂР°Р·c‹" },
-            new { name = "memes", description = "Р›cЋР±РёРјc‹Рµ РјРµРјc‹" },
-            new { name = "family", description = "РЎРµРјРµР№РЅc‹Рµ Р·РІcѓРєРё" },
-            new { name = "system", description = "РЎРёcc‚РµРјРЅc‹Рµ cРѕР±c‹c‚РёcЏ (build done, reminder)" }
+            new { name = "reactions", description = "Короткие реакции на фразы" },
+            new { name = "memes", description = "Любимые мемы" },
+            new { name = "family", description = "Семейные звуки" },
+            new { name = "system", description = "Системные события (build done, reminder)" }
         },
         note = "Files live in TOLIK_AUDIO_ROOT/<category>/ on the machine where TOLIK.Agent runs."
     });
@@ -2179,7 +2172,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
     // A real authenticated chat message IS a meaningful interaction (mind MI-0: the
     // inactivity clock resets; the social drive bumps — PLAN REFORM PRG-1a; §50: real input only).
     mind.MarkInteraction();
-    // Deterministic intent routing (В§24: LLM never decides permissions/actions alone).
+    // Deterministic intent routing (§24: LLM never decides permissions/actions alone).
     var intent = IntentRouter.Classify(action);
     var dispatcher = new AgentCommandDispatcher(context.RequestServices.GetRequiredService<AgentConnectionRegistry>());
     switch (intent.Kind)
@@ -2256,7 +2249,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
             try
             {
                 var agentResult = await dispatcher.ExecuteAsync(principal.UserId, AgentCapability.RunProcess, appName, cancellationToken);
-                await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: Рѕc‚РєcЂc‹Р» '{appName}' ({agentResult})", "chat.action.run_process", 1, cancellationToken);
+                await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: открыл '{appName}' ({agentResult})", "chat.action.run_process", 1, cancellationToken);
                 return Results.Ok(new { answer = $"Открыто: {appName}", action = "run_process", details = appName, source = "agent" });
             }
             catch (UnauthorizedAccessException)
@@ -2274,15 +2267,15 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
             var projectPath = intent.Argument.Trim();
             if (projectPath.Length == 0 || projectPath.Length > 512) return Results.BadRequest(new { error = "invalid_project_path" });
             var capability = intent.Kind == ChatIntentKind.BuildProject ? AgentCapability.RunBuild : AgentCapability.RunTests;
-            var label = intent.Kind == ChatIntentKind.BuildProject ? "РЎР±РѕcЂРєР°" : "РўРµcc‚c‹";
+            var label = intent.Kind == ChatIntentKind.BuildProject ? "Сборка" : "Тесты";
             // Intent paths get the policy check BEFORE dispatch (governance §1 gap-fix).
             var guard = GuardIntentCapability(principal, capability, projectPath, context.RequestServices);
             if (guard is not null) return guard;
             try
             {
                 var result = await dispatcher.ExecuteAsync(principal.UserId, capability, projectPath, cancellationToken);
-                await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"{label} РїcЂРѕРµРєc‚Р° {projectPath}: {result}", $"chat.action.{(intent.Kind == ChatIntentKind.BuildProject ? "run_build" : "run_tests")}", 1, cancellationToken);
-                return Results.Ok(new { answer = $"{label} Р·Р°РІРµcЂc€РµРЅР°.\n{result}", action = intent.Kind == ChatIntentKind.BuildProject ? "run_build" : "run_tests", details = projectPath, source = "agent" });
+                await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"{label} проекта {projectPath}: {result}", $"chat.action.{(intent.Kind == ChatIntentKind.BuildProject ? "run_build" : "run_tests")}", 1, cancellationToken);
+                return Results.Ok(new { answer = $"{label} завершена.\n{result}", action = intent.Kind == ChatIntentKind.BuildProject ? "run_build" : "run_tests", details = projectPath, source = "agent" });
             }
             catch (UnauthorizedAccessException)
             {
@@ -2290,15 +2283,15 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
             }
             catch (InvalidOperationException ex)
             {
-                return Results.Problem($"{label} РЅРµ cѓРґР°Р»Р°ccЊ: {ex.Message}", statusCode: 500);
+                return Results.Problem($"{label} не удалась: {ex.Message}", statusCode: 500);
             }
         }
     }
-    if (action.StartsWith("РїРѕРєР°Р¶Рё c„Р°Р№Р»c‹ ", StringComparison.OrdinalIgnoreCase) || action.StartsWith("РїРѕРєР°Р¶Рё cРѕРґРµcЂР¶РёРјРѕРµ ", StringComparison.OrdinalIgnoreCase))
+    if (action.StartsWith("покажи файлы ", StringComparison.OrdinalIgnoreCase) || action.StartsWith("покажи содержимое ", StringComparison.OrdinalIgnoreCase))
     {
         var marker = action.IndexOf(' ');
         var path = action[(marker + 1)..].Trim();
-        if (path.StartsWith("cРѕРґРµcЂР¶РёРјРѕРµ ", StringComparison.OrdinalIgnoreCase)) path = path[11..].Trim();
+        if (path.StartsWith("содержимое ", StringComparison.OrdinalIgnoreCase)) path = path[11..].Trim();
         string[] entries;
         try { entries = await files.ListDirectoryAsync(path, cancellationToken); }
         catch (UnauthorizedAccessException) { return Results.StatusCode(StatusCodes.Status403Forbidden); }
@@ -2307,7 +2300,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
         await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK: {answer}", "chat.action.list_directory", 1, cancellationToken);
         return Results.Ok(new { answer, action = "list_directory", source = "core" });
     }
-    if (action.StartsWith("cc‚Р°c‚cѓc РїcЂРѕc†РµccР° ", StringComparison.OrdinalIgnoreCase))
+    if (action.StartsWith("статус процесса ", StringComparison.OrdinalIgnoreCase))
     {
         var name = action[17..].Trim();
         if (string.IsNullOrWhiteSpace(name) || name.Any(char.IsWhiteSpace)) return Results.BadRequest(new { error = "invalid_process_name" });
@@ -2321,7 +2314,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
     // Remembered ask-policy preference (per user) overrides the coding-kind default.
     var route = router.ResolveWithFallback(routeKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
     if (route is null) return Results.Problem("No model route configured.", statusCode: 503);
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ: {request.Message}", "chat.user", 1, cancellationToken);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь: {request.Message}", "chat.user", 1, cancellationToken);
     var memories = await durableMemory.SearchAsync(principal.UserId, request.Message, MemoryContextBuilder.MaxItems, cancellationToken);
     var prompt = MemoryContextBuilder.Build(request.Message, memories);
     var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
@@ -2347,7 +2340,7 @@ app.MapPost("/voice/process", async (VoiceHttpRequest request, HttpContext conte
     if (principal is null) return AuthenticationRequired(context);
     if (request.Transcription is null || !request.Transcription.IsValid) return Results.BadRequest(new { error = "invalid_transcription" });
     var voiceResponse = await voice.ProcessAsync(new VoiceRequest(request.Transcription, request.Speaker, request.Mode), cancellationToken);
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (voice): {voiceResponse.Text}", "voice.user", 1, cancellationToken);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь (voice): {voiceResponse.Text}", "voice.user", 1, cancellationToken);
     var route = router.Resolve(ModelTaskKind.Simple);
     if (route is null) return Results.Problem("No simple model route configured.", statusCode: 503);
     string raw;
@@ -2391,7 +2384,7 @@ app.MapPost("/voice/transcribe", async (HttpContext context, IdentityService ide
         return Results.Problem("Transcription failed: " + ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (stt): {result.Text}", "voice.stt", 1, cancellationToken);
+    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь (stt): {result.Text}", "voice.stt", 1, cancellationToken);
     return Results.Ok(new { text = result.Text, language = result.Language, durationSeconds = result.DurationSeconds, model = result.Model });
 });
 app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context, IdentityService identity, WhisperSttProvider stt, VoiceRuntimeGate tts, VoiceProfile profile, ModelRouter router, ModelCompletionClient completion, DurableMemoryStore durableMemory, VoiceAdaptationChannel adaptationChannel, VoiceAdaptationPolicy adaptationPolicy, LearnedRuleStore rules, PersonalContextStore personalStore, AuditWriter audit, IConfiguration configuration, VoiceSpectrumState spectrum, CancellationToken cancellationToken) =>
@@ -2451,8 +2444,8 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         : $"Реплика (не владелец, voice): {transcription.Text}";
     await durableMemory.AddAsync(principal.UserId, memoryScope, memoryLine, userSource, ownerSpeaking ? 1 : 0.8, cancellationToken);
 
-    // 3. Reason вЂ” with intent routing: voice intents must execute deterministically;
-    //    the model must never pretend to have stored a memory it cannot store (В§24).
+    // 3. Reason — with intent routing: voice intents must execute deterministically;
+    //    the model must never pretend to have stored a memory it cannot store (§24).
     var intent = IntentRouter.Classify(transcription.Text);
     if (intent.Kind is ChatIntentKind.OpenApp or ChatIntentKind.SwitchVoiceMode or ChatIntentKind.Reminder
         or ChatIntentKind.StoreMemory or ChatIntentKind.StoreFamilyMeme or ChatIntentKind.StoreFunny
@@ -2497,7 +2490,7 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     var sanitized = ModelResponseSanitizer.Sanitize(raw);
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK (voice): {sanitized.Text}", "voice.assistant", 0.8, cancellationToken);
 
-    // 5. TTS вЂ” global runtime mode applies unless the request carries an explicit one.
+    // 5. TTS — global runtime mode applies unless the request carries an explicit one.
     // Speech cut: long monologues are trimmed to the last full sentence (~30s of audio).
     var speech = MemoryContextBuilder.TrimForSpeech(sanitized.Text);
     var runtimeState = context.RequestServices.GetRequiredService<VoiceRuntimeState>();
@@ -3138,7 +3131,7 @@ static async Task<List<double>?> EmbedSpeakerAudioAsync(byte[] audio, string fil
     }
     catch { return null; }
 }
-// WebSocket realtime events (В§29). app.Map branch: the delegate completes the
+// WebSocket realtime events (§29). app.Map branch: the delegate completes the
 // socket itself, so no IResult is returned after the handshake.
 app.MapGet("/events/ws", async context =>
 {
@@ -3346,7 +3339,7 @@ app.MapPost("/proactive/remind", async (ProactiveRemindRequest request, HttpCont
     try
     {
         var scheduled = await proactive.ScheduleAsync(principal.UserId, request.Text, request.Priority ?? "Normal", dueAt.Value, request.Reason ?? "user_reminder", cancellationToken);
-        await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK Р·Р°РїРёcР°Р» РЅР°РїРѕРјРёРЅР°РЅРёРµ: {request.Text} (РЅР° {dueAt:HH:mm})", "proactive.reminder", 1, cancellationToken);
+        await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"TOLIK записал напоминание: {request.Text} (на {dueAt:HH:mm})", "proactive.reminder", 1, cancellationToken);
         return Results.Ok(new { id = scheduled.Id, text = scheduled.Text, dueAt = scheduled.DueAt, priority = scheduled.Priority });
     }
     catch (ArgumentException)
