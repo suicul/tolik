@@ -86,6 +86,45 @@ public sealed class DurableMemoryStore(IDbContextFactory<TolikDbContext> dbFacto
             .ToArray();
     }
 
+    /// <summary>
+    /// Shared and public memory only — no private entries at all, from anyone.
+    ///
+    /// Used when the person speaking is NOT the verified owner (a family member or a
+    /// guest at the microphone). <see cref="SearchAsync"/> would return the owner's
+    /// PRIVATE memories in that case, because it filters private rows by the
+    /// authenticated account rather than by who is actually talking — which means a
+    /// relative could hear the owner's private facts spoken back. Voice confidence is
+    /// not authorization (AGENTS §13), so an unverified turn must not be able to pull
+    /// owner-only memory into the model's context at all.
+    /// </summary>
+    public async Task<IReadOnlyList<MemoryItem>> SearchSharedAsync(
+        string query,
+        int limit = 100,
+        CancellationToken cancellationToken = default)
+    {
+        if (query is null) throw new ArgumentNullException(nameof(query));
+        if (query.Length > 256) throw new ArgumentException("Query is too long.", nameof(query));
+        if (limit is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(limit));
+
+        var normalized = query.Trim();
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var rows = await db.Memories
+            .AsNoTracking()
+            .Where(x =>
+                (x.Scope == nameof(MemoryScope.Shared) || x.Scope == nameof(MemoryScope.Public)) &&
+                (normalized.Length == 0 || EF.Functions.ILike(x.Content, $"%{EscapeLikePattern(normalized)}%", "\\")))
+            .OrderByDescending(x => x.Confidence)
+            .ThenByDescending(x => x.CreatedAt)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Where(x => Enum.TryParse<MemoryScope>(x.Scope, ignoreCase: false, out _))
+            .Select(x => new MemoryItem(x.Id, x.OwnerId, Enum.Parse<MemoryScope>(x.Scope), x.Content, x.Source, x.Confidence, x.CreatedAt, x.Origin))
+            .ToArray();
+    }
+
     /// <summary>Returns oldest-to-newest non-compacted memories for the owner created before the cutoff.</summary>
     public async Task<IReadOnlyList<MemoryItem>> GetOlderThanAsync(
         Guid ownerId,

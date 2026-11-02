@@ -2437,9 +2437,19 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "voice.speaker.turn", speakerVerified ? "ALLOW" : "DENY", speakerVerified ? "speaker_accepted" : "speaker_rejected", principal, null, null, null, speakerVerified ? "accepted" : "rejected", cancellationToken);
     }
 
-    // 2. Memory: store what the user said
-    var userSource = hasSpeakerProfile && !speakerVerified ? "voice.user.unverified" : "voice.user";
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"РџРѕР»cЊР·РѕРІР°c‚РµР»cЊ (voice): {transcription.Text}", userSource, 1, cancellationToken);
+    // 2. Memory: store what was said — attributed HONESTLY (AGENTS §18: "не смешивать
+    //    твои слова со словами Марии или гостя"). A voice that is not the verified
+    //    owner never enters the owner's PRIVATE memory: it becomes a shared household
+    //    line, labelled as not-the-owner, so the event is not lost but the privacy
+    //    scope stays true. With no enrolled profile the device session is all we have
+    //    (single-speaker setup), so the owner path still applies.
+    var ownerSpeaking = !hasSpeakerProfile || speakerVerified;
+    var memoryScope = ownerSpeaking ? MemoryScope.Private : MemoryScope.Shared;
+    var userSource = ownerSpeaking ? "voice.user" : "voice.user.unverified";
+    var memoryLine = ownerSpeaking
+        ? $"Пользователь (voice): {transcription.Text}"
+        : $"Реплика (не владелец, voice): {transcription.Text}";
+    await durableMemory.AddAsync(principal.UserId, memoryScope, memoryLine, userSource, ownerSpeaking ? 1 : 0.8, cancellationToken);
 
     // 3. Reason вЂ” with intent routing: voice intents must execute deterministically;
     //    the model must never pretend to have stored a memory it cannot store (В§24).
@@ -2459,7 +2469,12 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
     string raw;
     try
     {
-        var memories = await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
+        // Retrieval follows the same rule as the write: an unverified speaker must not
+        // pull the owner's PRIVATE memory into the prompt (a relative would hear those
+        // facts spoken back). Shared + public household memory is what they get.
+        var memories = ownerSpeaking
+            ? await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken)
+            : await durableMemory.SearchSharedAsync(transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
         var prompt = MemoryContextBuilder.BuildVoice(transcription.Text, memories);
         var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
         prompt = MemoryContextBuilder.AppendRules(prompt, learned);
@@ -2540,9 +2555,16 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     }
     telemetry.Mark("speaker_done");
 
-    // Memory: store what the user said.
-    var userSource = hasSpeakerProfile && !speakerVerified ? "voice.user.unverified" : "voice.user";
-    await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь (voice): {transcription.Text}", userSource, 1, cancellationToken);
+    // Memory: store what was said — attributed honestly, the same rule as /voice/turn.
+    // An unverified voice never enters the owner's PRIVATE memory (AGENTS §18); it
+    // becomes a shared household line labelled as not-the-owner.
+    var ownerSpeaking = !hasSpeakerProfile || speakerVerified;
+    var memoryScope = ownerSpeaking ? MemoryScope.Private : MemoryScope.Shared;
+    var userSource = ownerSpeaking ? "voice.user" : "voice.user.unverified";
+    var memoryLine = ownerSpeaking
+        ? $"Пользователь (voice): {transcription.Text}"
+        : $"Реплика (не владелец, voice): {transcription.Text}";
+    await durableMemory.AddAsync(principal.UserId, memoryScope, memoryLine, userSource, ownerSpeaking ? 1 : 0.8, cancellationToken);
 
     // Intents: the same deterministic handling as /voice/turn (the JSON response).
     var intent = IntentRouter.Classify(transcription.Text);
@@ -2559,7 +2581,11 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
     var route = router.ResolveWithFallback(voiceKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
     if (route is null) return Results.Problem("No model route configured.", statusCode: StatusCodes.Status503ServiceUnavailable);
 
-    var memories = await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
+    // Retrieval follows the same rule as the write: an unverified speaker must not pull
+    // the owner's PRIVATE memory into the prompt.
+    var memories = ownerSpeaking
+        ? await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken)
+        : await durableMemory.SearchSharedAsync(transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
     var prompt = MemoryContextBuilder.BuildVoice(transcription.Text, memories);
     var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
     prompt = MemoryContextBuilder.AppendRules(prompt, learned);

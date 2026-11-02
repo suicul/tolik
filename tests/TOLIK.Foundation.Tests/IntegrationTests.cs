@@ -477,6 +477,65 @@ public sealed class MemoryIntegrationTests
     }
 
     [Fact]
+    public async Task Shared_search_never_returns_private_memory()
+    {
+        // AGENTS §18/§19: a person who is not the verified owner must not be able to
+        // pull the owner's PRIVATE memory into the model's context through the voice
+        // path. SearchAsync (account-scoped) would return it; SearchSharedAsync must not.
+        using var factory = new CoreHostFactory();
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<DurableMemoryStore>();
+        var owner = Guid.NewGuid();
+
+        var marker = "молоко " + Guid.NewGuid().ToString("N");
+        await store.AddAsync(owner, MemoryScope.Private, $"секрет владельца {marker}", "test", 0.9);
+        await store.AddAsync(owner, MemoryScope.Shared, $"общий факт {marker}", "test", 0.9);
+        await store.AddAsync(owner, MemoryScope.Public, $"публичный факт {marker}", "test", 0.9);
+
+        // The account-scoped search (typed chat) sees all three.
+        Assert.Equal(3, (await store.SearchAsync(owner, marker)).Count);
+
+        // The unverified-speaker search (voice, not the owner) sees only the two
+        // non-private rows — the owner's secret is not in the result at all.
+        var shared = await store.SearchSharedAsync(marker);
+        Assert.Equal(2, shared.Count);
+        Assert.DoesNotContain(shared, m => m.Scope == MemoryScope.Private);
+        Assert.DoesNotContain(shared, m => m.Content.Contains("секрет владельца", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Shared_search_includes_memory_owned_by_another_person()
+    {
+        // The household shares a scope, not an owner column: another person's SHARED
+        // memory is visible, while their PRIVATE memory stays invisible.
+        using var factory = new CoreHostFactory();
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<DurableMemoryStore>();
+        var maria = Guid.NewGuid();
+
+        var marker = "дача " + Guid.NewGuid().ToString("N");
+        await store.AddAsync(maria, MemoryScope.Shared, $"общее с Марией {marker}", "test", 0.9);
+        await store.AddAsync(maria, MemoryScope.Private, $"личное Марии {marker}", "test", 0.9);
+
+        var shared = await store.SearchSharedAsync(marker);
+
+        Assert.Single(shared);
+        Assert.StartsWith("общее с Марией", shared[0].Content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Shared_search_validates_its_arguments()
+    {
+        using var factory = new CoreHostFactory();
+        using var scope = factory.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<DurableMemoryStore>();
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() => store.SearchSharedAsync(null!));
+        await Assert.ThrowsAsync<ArgumentException>(() => store.SearchSharedAsync(new string('x', 257)));
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => store.SearchSharedAsync("x", 0));
+    }
+
+    [Fact]
     public async Task Development_can_reset_owner_memory()
     {
         using var factory = new CoreHostFactory();
