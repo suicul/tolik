@@ -11,10 +11,10 @@
 окне и откроет страницу цефалона. Консольный вариант с флагами:
 
 ```powershell
-.\scripts\start-tolik.ps1                # всё сразу (+XTTS, если есть NVIDIA runtime)
+.\scripts\start-tolik.ps1                # всё сразу (TTS = edge-tts, VRAM свободна)
 .\scripts\start-tolik.ps1 -NoAgent       # только стек (postgres + voice + core)
 .\scripts\start-tolik.ps1 -NoBrowser     # без открытия страницы
-.\scripts\start-tolik.ps1 -NoXtts        # без нейроголоса (edge/offline цепочка)
+.\scripts\start-tolik.ps1 -WithXtts      # + нейроголос XTTS (GPU, по желанию)
 .\scripts\stop-tolik.ps1                 # остановить стек (данные целы)
 ```
 

@@ -1,4 +1,4 @@
 @echo off
 REM TOLIK double-click launcher. Runs scripts\start-tolik.ps1 with the given flags.
-REM Usage: TOLIK.bat [-NoAgent] [-NoBrowser] [-NoXtts]
+REM Usage: TOLIK.bat [-NoAgent] [-NoBrowser] [-WithXtts]
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-tolik.ps1" %*

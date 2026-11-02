@@ -7,10 +7,10 @@ Tailscale — только транспорт. Авторизация всё р�
 
 ## 0. Один файл запуска (дома)
 
-`TOLIK.bat` поднимает всё: стек (postgres/voice/core/+xtts при GPU),
-Ollama-модель, bootstrap, Windows-агент **и OpenCode-сервер**
+`TOLIK.bat` поднимает всё: стек (postgres/voice/core; +xtts только с флагом
+`-WithXtts`), bootstrap, Windows-агент **и OpenCode-сервер**
 (`opencode serve --port 4096`, своё окно). Флаги отказа:
-`-NoAgent -NoBrowser -NoXtts -NoOpenCode`.
+`-NoAgent -NoBrowser -NoOpenCode`.
 Сессии opencode живут на домашнем ПК — с ноутбука продолжается тот же чат.
 
 ## 1. Windows-ПК: открыть наружу (только tailnet!)

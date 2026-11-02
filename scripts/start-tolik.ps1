@@ -1,7 +1,8 @@
-﻿# TOLIK one-command launcher (verified path, see docs/LIVE-DEMO.md).
-# Starts: PostgreSQL + Voice + Core (Docker) -> Ollama model check ->
+# TOLIK one-command launcher (verified path, see docs/LIVE-DEMO.md).
+# Starts: PostgreSQL + Voice + Core (Docker) ->
 # device bootstrap (once) -> Windows Agent (new window) ->
 # OpenCode server (new window, remote attach) -> browser UI.
+# Ollama is NOT started or warmed (emergency route only); XTTS is opt-in (-WithXtts).
 #
 # Usage:
 #   .\scripts\start-tolik.ps1                # everything
@@ -11,7 +12,7 @@
 param(
     [switch]$NoAgent,
     [switch]$NoBrowser,
-    [switch]$NoXtts,
+    [switch]$WithXtts,
     [switch]$NoOpenCode,
     [int]$HeartbeatSec = 2
 )
@@ -26,38 +27,36 @@ $tokenPath = Join-Path $HOME ".tolik\session-token"
 
 Write-Host "== TOLIK launcher ==" -ForegroundColor Cyan
 
-# 0. Prerequisites: docker + ollama CLIs
-foreach ($cmd in @("docker", "ollama")) {
-    if (-not (Get-Command $cmd -ErrorAction SilentlyContinue)) {
-        Write-Host "ERROR: '$cmd' CLI not found in PATH." -ForegroundColor Red
-        exit 1
-    }
+# 0. Prerequisites: docker. Ollama is optional — it is the EMERGENCY route only
+# (no internet), never started or warmed by default.
+if (-not (Get-Command "docker" -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: 'docker' CLI not found in PATH." -ForegroundColor Red
+    exit 1
 }
+$hasOllama = [bool](Get-Command "ollama" -ErrorAction SilentlyContinue)
 
-# 1. Model on the host (Ollama keeps it warm itself via keep_alive=60m per request)
-$models = (ollama list 2>$null) -join "`n"
-if ($models -notmatch [regex]::Escape("qwen2.5:3b")) {
-    Write-Host "Pulling model $Model (once)..." -ForegroundColor Yellow
-    ollama pull $Model
+# 1. Emergency local model: pulled ONLY on request, never at startup (VRAM stays free).
+if ($hasOllama) {
+    Write-Host "Ollama present (emergency route only, not started, not warmed)." -ForegroundColor DarkGray
 } else {
-    Write-Host "Model $Model present." -ForegroundColor Green
+    Write-Host "Ollama absent: cloud-only operation (no emergency fallback)." -ForegroundColor DarkGray
 }
 
 # 2. Stack (secrets stay in .env; never printed here).
 # Dev launcher opt-in: the same-machine page may mint its own owner session,
 # so no hand-copied tokens are needed. Never set this for shared/VPS hosts.
 $env:TOLIK_DEV_AUTO_TOKEN = 'true'
-# Neural voice sidecar (GPU, Ordis voice). Skipped with -NoXtts or when the
-# NVIDIA runtime is absent — the voice service falls back to edge/offline.
+# Neural voice sidecar (GPU, Ordis voice). OPT-IN via -WithXtts: by default TTS is
+# edge-tts (cloud, no VRAM) per the owner decision of 02.11.2026.
 $profiles = @('--profile', 'vps')
-if (-not $NoXtts) {
+if ($WithXtts) {
     try {
         docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi --query-gpu=name --format=csv,noheader 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { $profiles += @('--profile', 'gpu') }
         else { Write-Host "No NVIDIA runtime: starting without XTTS voice." -ForegroundColor DarkGray }
     } catch { Write-Host "No NVIDIA runtime: starting without XTTS voice." -ForegroundColor DarkGray }
 }
-Write-Host "Starting stack (postgres + voice + core$(if (-not $NoXtts) { ' + xtts' }))..." -ForegroundColor Yellow
+Write-Host "Starting stack (postgres + voice + core$(if ($WithXtts) { ' + xtts' }))..." -ForegroundColor Yellow
 docker compose $profiles up -d | Out-Null
 
 # 3. Wait for Core health (proxy-free HttpClient: Win PowerShell 5.1 would otherwise

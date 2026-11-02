@@ -74,7 +74,8 @@ builder.Services.AddHostedService<BackupSchedulerBackgroundService>();
 builder.Services.AddSingleton<VoiceRuntimeState>();
 builder.Services.AddSingleton<VoiceTurnRegistry>();
 builder.Services.AddTransient<VoiceTurnTelemetry>();
-builder.Services.AddHostedService<ModelPrewarmService>();
+// No model prewarm (owner decision 02.11.2026): cloud routes are always warm, and the
+// local model is an emergency path only — prewarming it would pin VRAM permanently.
 // Voice identity (docs/voice-identity.md VI-2): adaptive learning runs OUTSIDE the
 // turn path; the channel is the only hand-off (bounded, non-blocking).
 builder.Services.AddSingleton<VoiceAdaptationChannel>();

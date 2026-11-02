@@ -35,7 +35,7 @@ public sealed class ModelRouterTests
     }
 
     [Fact]
-    public void Simple_prefers_offline_even_when_cloud_configured()
+    public void Simple_prefers_cloud_even_when_offline_configured()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -48,6 +48,37 @@ public sealed class ModelRouterTests
             ["TOLIK_MODEL_OFFLINE_SIMPLE:ENDPOINT"] = "http://localhost:11434"
         }).Build();
         var route = new ModelRouter(config).ResolveWithFallback(ModelTaskKind.Simple);
+        Assert.Equal("cloud-chat", route!.Model);
+    }
+
+    [Fact]
+    public void Simple_falls_back_to_offline_when_cloud_unconfigured()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TOLIK_OFFLINE_MODE"] = "false",
+            ["TOLIK_MODEL_OFFLINE_SIMPLE:MODEL"] = "qwen3:4b",
+            ["TOLIK_MODEL_OFFLINE_SIMPLE:ENDPOINT"] = "http://localhost:11434"
+        }).Build();
+        var route = new ModelRouter(config).ResolveWithFallback(ModelTaskKind.Simple);
+        Assert.Equal("qwen3:4b", route!.Model);
+    }
+
+    [Fact]
+    public void Local_preference_forces_offline_even_when_cloud_configured()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["TOLIK_OFFLINE_MODE"] = "false",
+            ["TOLIK_MODELS_SIMPLE:PROVIDER"] = "openai-compatible",
+            ["TOLIK_MODELS_SIMPLE:MODEL"] = "cloud-chat",
+            ["TOLIK_MODELS_SIMPLE:ENDPOINT"] = "https://provider.invalid/v1",
+            ["TOLIK_MODELS_SIMPLE:API_KEY"] = "test-key",
+            ["TOLIK_MODEL_OFFLINE_SIMPLE:MODEL"] = "qwen3:4b",
+            ["TOLIK_MODEL_OFFLINE_SIMPLE:ENDPOINT"] = "http://localhost:11434"
+        }).Build();
+        var route = new ModelRouter(config).ResolveWithFallback(
+            ModelTaskKind.Simple, ModelRoutingPreference.Local);
         Assert.Equal("qwen3:4b", route!.Model);
     }
 
