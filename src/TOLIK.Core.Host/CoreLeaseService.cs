@@ -124,7 +124,28 @@ public sealed class CoreLeaseService(
             logger.LogWarning("Core lease check skipped: {Message}", ex.Message);
             return;
         }
-        if (!check.IsStale) return;
+        if (!check.IsStale)
+        {
+            // Healthy path: EXTEND the lease before it lapses. The earlier version returned
+            // here without renewing and only ever renewed AFTER going stale, so a completely
+            // healthy runtime let the lease expire every leaseDuration, briefly fenced
+            // itself and bumped the epoch — observed live as a flap every ~2 minutes
+            // ("CORE LEASE STALE: lease_expired" immediately followed by a re-acquire).
+            try
+            {
+                if (!await leases.RenewAsync(_runtimeInstanceId, Environment.MachineName, leaseDuration, stoppingToken))
+                {
+                    logger.LogWarning(
+                        "Core lease renewal refused while healthy (runtime {Self}) — re-checking on the next tick.",
+                        _runtimeInstanceId);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning("Core lease renewal skipped: {Message}", ex.Message);
+            }
+            return;
+        }
 
         // Stale transition (SetStale returns true only on clear→stale): audited once
         // per transition, not per tick — the audit chain is append-only and precious.

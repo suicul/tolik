@@ -40,6 +40,13 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
     /// <summary>Dev-token flag for lifecycle tests (TOLIK_DEV_AUTO_TOKEN; default off per appsettings).</summary>
     public bool DevTokenEnabled { get; init; }
 
+    /// <summary>
+    /// Core lease duration override (TOLIK_CORE_LEASE_SEC). The lease renewal loop ticks every
+    /// duration/3, so a few seconds makes renewal behaviour observable without a two-minute
+    /// wait; null keeps the production default.
+    /// </summary>
+    public int? LeaseSeconds { get; init; }
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         // UseSetting flows into WebApplicationBuilder's initial configuration.
@@ -50,6 +57,7 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
         builder.UseSetting("TOLIK_VOICE:COSYVOICE_ENDPOINT", "http://localhost:8000");
         if (UnlockCode is not null) builder.UseSetting("TOLIK_SECURITY_UNLOCK_CODE", UnlockCode);
         if (DevTokenEnabled) builder.UseSetting("TOLIK_DEV_AUTO_TOKEN", "true");
+        if (LeaseSeconds is not null) builder.UseSetting("TOLIK_CORE_LEASE_SEC", LeaseSeconds.Value.ToString());
 
         builder.ConfigureServices(services =>
         {
