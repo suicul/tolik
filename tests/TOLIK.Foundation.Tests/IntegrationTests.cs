@@ -27,10 +27,10 @@ public sealed class CoreHostFactory : WebApplicationFactory<Program>
 
     /// <summary>
     /// Server-level connection (no database) shared by the per-test connection string and
-    /// the teardown path, so the two literals cannot drift apart.
+    /// the teardown path. Resolved from the environment or the git-ignored .env so that no
+    /// credential is committed — see TolikTestDatabase.
     /// </summary>
-    private const string ServerConnection =
-        "Host=localhost;Port=5432;Username=tolik;Password=TolikSecureP@ss2026!";
+    private static string ServerConnection => TolikTestDatabase.ServerConnection;
 
     private string TestConnection => $"{ServerConnection};Database={_databaseName}";
 
