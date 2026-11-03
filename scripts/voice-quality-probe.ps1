@@ -1,4 +1,4 @@
-# Voice clarity probe: synthesize fixed phrases via XTTS, transcribe via the voice
+﻿# Voice clarity probe: synthesize fixed phrases via XTTS, transcribe via the voice
 # service (ru), report word match rate. Objective proxy for intelligibility —
 # no ears required. Used to compare prompts, dictionaries and DSP settings.
 [CmdletBinding()]

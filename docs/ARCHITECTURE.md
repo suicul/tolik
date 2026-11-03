@@ -49,7 +49,9 @@
 | src/TOLIK.Infrastructure/Identity/IdentityService.cs | User identity |
 | src/TOLIK.Infrastructure/Auditing/AuditWriter.cs | Audit logging |
 | src/TOLIK.Infrastructure/Authorization/AuthorizationPolicy.cs | Authorization |
-| clients/TOLIK.Cli | CLI client |
+| src/TOLIK.Desktop | Windows client (chat + voice, the main client) |
+| src/TOLIK.Desktop/Identity/DeviceIdentity.cs | DPAPI-sealed P-256 device key |
+| src/TOLIK.Core.Host | Core HTTP API (auth, chat, voice, tasks) |
 
 ## Database Schema (actual table names)
 

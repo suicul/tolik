@@ -1,4 +1,4 @@
-# Splits long dataset WAVs on silence into short training clips (mono 24kHz).
+﻿# Splits long dataset WAVs on silence into short training clips (mono 24kHz).
 # Reads manifest rows with status 'needs_split', replaces them with clip rows
 # (status 'needs_transcript'). Intervals longer than MaxSeconds are cut at even
 # midpoints (may clip words — transcripts come from the clip itself, and human

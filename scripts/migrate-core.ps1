@@ -1,4 +1,4 @@
-# TOLIK Core Migration Protocol (docs/identity-presence.md §3, IP-2).
+﻿# TOLIK Core Migration Protocol (docs/identity-presence.md §3, IP-2).
 # Transactional migration: PREPARE -> VERIFY DESTINATION -> PAUSE (optional)
 # -> SNAPSHOT -> SYNC -> INTEGRITY -> BOOT -> HEALTH -> EPOCH ACQUIRE+FENCE
 # -> VERIFY -> FINALIZE. Abort-on-fail at every step.

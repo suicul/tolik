@@ -4,6 +4,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Core serves no UI: the web page was removed from the product 03.11.2026
+         (Windows client is the main client, interface/ is reference only). Without this,
+         the Web SDK still emits a static-asset manifest that points at the now-absent
+         wwwroot and fails host startup with DirectoryNotFoundException. -->
+    <StaticWebAssetsEnabled>false</StaticWebAssetsEnabled>
   </PropertyGroup>
 
   <ItemGroup>

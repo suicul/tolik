@@ -32,9 +32,6 @@ WORKDIR /app
 COPY --from=build /app/publish ./
 USER $APP_UID
 
-# wwwroot must exist in publish output; create as fallback for bare images.
-RUN mkdir -p /app/wwwroot
-
 ENV ASPNETCORE_URLS=http://+:5080 \
     DOTNET_EnableDiagnostics=0
 EXPOSE 5080

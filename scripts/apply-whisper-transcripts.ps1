@@ -1,4 +1,4 @@
-# Applies whisper transcripts (datasets/transcripts/manifest.jsonl) to the dataset
+﻿# Applies whisper transcripts (datasets/transcripts/manifest.jsonl) to the dataset
 # manifest (artifacts/cosyvoice-dataset/manifest.csv): fills the text and marks
 # rows needs_review. NEVER sets 'transcribed' — that status is the human-review
 # gate (build-cosyvoice-manifests blocks everything else); whisper hallucinates

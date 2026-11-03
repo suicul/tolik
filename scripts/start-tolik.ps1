@@ -1,4 +1,4 @@
-# TOLIK one-command launcher (verified path, see docs/LIVE-DEMO.md).
+﻿# TOLIK one-command launcher (verified path, see docs/LIVE-DEMO.md).
 # Starts: PostgreSQL + Voice + Core (Docker) ->
 # device bootstrap (once) -> Windows Agent (new window) ->
 # OpenCode server (new window, remote attach) -> browser UI.
@@ -85,15 +85,15 @@ try {
 }
 Write-Host "Core healthy." -ForegroundColor Green
 
-# 4. Device bootstrap (once; re-run is safe — the device key is reused).
-# Prefers the self-contained dist CLI (no .NET SDK required), falls back to dotnet run.
-$cliExe = Join-Path $root 'dist\cli\TOLIK.Cli.exe'
+# 4. Session token for the device (renewed by signature; the device key is reused).
+# Replaces the retired TOLIK.Cli bootstrap step: the script signs a one-time challenge
+# with the same DPAPI-sealed device key the TOLIK client uses.
 if (-not (Test-Path $tokenPath)) {
-    Write-Host "First run: enrolling this device..." -ForegroundColor Yellow
-    if (Test-Path $cliExe) { & $cliExe bootstrap | Out-Null }
-    else { dotnet run --project clients\TOLIK.Cli -- bootstrap | Out-Null }
+    Write-Host "No session token: renewing by device signature..." -ForegroundColor Yellow
+    & powershell -NoProfile -File (Join-Path $PSScriptRoot 'get-session-token.ps1') -CoreUrl $CoreUrl
     if (-not (Test-Path $tokenPath)) {
-        Write-Host "ERROR: bootstrap failed, no token at $tokenPath" -ForegroundColor Red
+        Write-Host "ERROR: session renewal failed, no token at $tokenPath" -ForegroundColor Red
+        Write-Host "Register the device in the TOLIK client (code from TOLIK_BOOTSTRAP_CODE) first." -ForegroundColor Yellow
         exit 1
     }
 }

@@ -345,15 +345,6 @@ app.MapPost("/emergency/resume", async (HttpContext context, IdentityService ide
     await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "emergency.resume", "ALLOW", "owner_emergency_resume", principal, null, null, null, "resumed", cancellationToken);
     return Results.Ok(new { stopped = false });
 });
-app.UseDefaultFiles();
-app.UseStaticFiles(new StaticFileOptions
-{
-    // Prototype UI changes often; never let browsers run stale JS/CSS.
-    OnPrepareResponse = static ctx =>
-    {
-        ctx.Context.Response.Headers.CacheControl = "no-store";
-    }
-});
 app.UseWebSockets();
 
 app.Use(async (context, next) =>

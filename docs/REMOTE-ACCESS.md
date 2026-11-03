@@ -73,7 +73,9 @@ Windows-агент выполняет, Core возвращает результ�
 
 Если Tailscale недоступен: OpenSSH Server на Windows
 (Settings → Apps → Optional features → OpenSSH Server, `Start-Service sshd`),
-с работы: `ssh user@<windows-ip> "C:\DEV\TOLIK_QWEN\dist\cli\TOLIK.Cli.exe chat ..."`.
+с работы — прямой вызов API с полученным токеном:
+`ssh user@<windows-ip> "powershell -File C:\DEV\TOLIK_QWEN\scripts\get-session-token.ps1"`
+(токен продлевается подписью устройства; CLI-клиент удалён из продукта).
 Ключи вместо паролей; это вне периметра TOLIK-аудита.
 
 ## 5. Безопасность

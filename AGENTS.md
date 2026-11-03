@@ -1214,7 +1214,7 @@ TOLIK/
 │
 ├── clients/
 │   ├── TOLIK.Android/
-│   └── TOLIK.Cli/
+│   └── (TOLIK.Cli retired 03.11.2026 — Windows client is the main client)
 │
 ├── tests/
 │   ├── TOLIK.Core.Tests/

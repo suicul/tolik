@@ -39,10 +39,10 @@ Visual state = детерминированная смесь из РЕАЛЬНЫ
 ```text
 cephalon.html (design source, 2D canvas, исправлен 10.10.2026)
    │
-   ├── Desktop (сейчас): отдельная страница работает; следующий шаг —
-   │     встроить глаз как панель в существующий workspace UI (wwwroot/index.html)
-   │     и подключить РЕАЛЬНЫЕ данные: WS /events/ws + /health (есть) +
-   │     voice runtime state (есть)
+   ├── Desktop (сделано): глаз встроен в окно TOLIK.Desktop и питается реальными
+   │     данными — WS /events/ws, /health, voice runtime state. Веб-страница
+   │     (бывший wwwroot/index.html) удалена из продукта 03.11.2026; `cephalon.html`
+   │     остаётся дизайн-источником, а не рабочей поверхностью
    ├── Android (AN-1+): тот же Expression State, рендер в приложении
    │     (thin: RealtimeEventHub → состояние → аватар; без Core logic)
    └── VR (после Desktop Phase 1, Unity + Meta XR SDK): та же дизайн-система

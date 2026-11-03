@@ -57,8 +57,11 @@ docker compose --profile vps up -d
 # 2. Модель на хосте (один раз; дальше держится теплой сама, keep_alive=60m)
 ollama pull qwen2.5:3b-instruct
 
-# 3. Регистрация устройства (один раз; перевыпуск безопасен — ключ переиспользуется)
-dotnet run --project clients\TOLIK.Cli -- bootstrap --code TLK-BSTEP-2026-INIT
+# 3. Регистрация устройства и сессия.
+#    Первый раз — в клиенте TOLIK (окно чата, код из TOLIK_BOOTSTRAP_CODE);
+#    клиент создаёт ключ устройства под DPAPI и регистрирует его на Core.
+#    Дальше сессия продлевается подписью устройства:
+powershell -NoProfile -File scripts\get-session-token.ps1
 # токен ляжет в ~\.tolik\session-token
 
 # 4. Агент Windows (отдельное окно, должно висеть)
@@ -70,15 +73,13 @@ $env:TOLIK_SESSION_TOKEN = (Get-Content ~\.tolik\session-token).Trim()
 # без dist: dotnet run --project src\TOLIK.Agent -- --core-url http://127.0.0.1:5080 --heartbeat-sec 2
 # (тогда env ставится тем же способом в том же окне)
 
-# 5. Интерфейс: открыть http://127.0.0.1:5080/ .
-#    Токен подставляется сам (лаунчер включает TOLIK_DEV_AUTO_TOKEN, страница
-#    забирает сессию с Core и показывает «Токен принят, агентов онлайн: N»).
-#    Вручную: вставить токен из ~\.tolik\session-token в поле Bearer token.
+# 5. Интерфейс: окно «Толик» (главный клиент Windows) — чат и голос с микрофона ПК.
+#    Веб-страница из продукта удалена: `interface/` остаётся референсом протокола.
 ```
 
-Альтернатива без браузера: `dotnet run --project clients\TOLIK.Cli -- chat "текст"`
-и `... -- listen` (голосовой цикл), токен подхватывается из `~\.tolik\session-token`
-или `TOLIK_SESSION_TOKEN`.
+Проверка без микрофона и без клиента: `dotnet run --project tools\VoiceProbe -- <wav 16 кГц моно>`
+(речь идёт через реальный транспорт клиента), и `scripts\test-e2e.ps1` — дымовой прогон
+API напрямую.
 
 ## Первые фразы (smoke)
 

@@ -39,7 +39,7 @@ RequeueForExecution (шов approve/re-execute).
 | Learned rules | LearnedRuleStore (Postgres): 0.6→bump+0.1 cap 0.95, top-5 в промпты — фундамент skill learning |
 | Watchdog + Proactive | failed/completed/stuck >30 мин, dedupe — фундамент recovery-циклов |
 | RealtimeEventHub | per-user fan-out, task events — расширение для Cephalon/UI events |
-| Cephalon визуал | wwwroot/index.html canvas (pulse по громкости); TOLIK.Desktop НЕ существует (Track 3 blocked) |
+| Cephalon визуал | `interface/cephalon.html` (design source, 2D canvas) + TOLIK.Desktop — штатный носитель. Веб-страница из продукта удалена 03.11.2026 |
 | Destructive screen | rm -rf/format/shutdown/drop → deny (для Codex/OpenCode) |
 
 ## 1. Иерархия способов выполнения (треб. #2)

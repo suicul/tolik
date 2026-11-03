@@ -24,8 +24,8 @@
 | 9 | Агент: авто-reconnect | `WindowsAgent.RunCommandLoopAsync` (backoff 5с→80с) |
 | 10 | Фикс JSON ImmutableHashSet | `src/TOLIK.Contracts/ImmutableSetJsonConverter.cs` |
 | 11 | Realtime-события | `RealtimeEventHub.cs`, `/events/ws`, хук `TaskLifecycle.EventPublished` |
-| 12 | Web-консоль | `wwwroot/index.html` |
-| 13 | CLI полный | `clients/TOLIK.Cli/*` (bootstrap/transcribe/say/listen/remind/sound/memory/agents) |
+| 12 | Web-консоль | `wwwroot/index.html` — **удалена 03.11.2026**, референс остаётся в `interface/` |
+| 13 | CLI полный | `clients/TOLIK.Cli/*` — **удалён 03.11.2026**: bootstrap/сессия переехали в Windows-клиент и `scripts/get-session-token.ps1` |
 | 14 | Linux-клиент | `clients/tolik-linux.sh` |
 | 15 | Скрипты | `scripts/start-tolik.ps1`, `transcribe-dataset.ps1`, `test-e2e.ps1` |
 
@@ -106,9 +106,9 @@
 docker compose up -d postgres                          # база
 python services\voice\server.py --whisper-model small   # голос (окно 1)
 .\scripts\start-tolik.ps1                               # Core (окно 2)
-dotnet run --project clients\TOLIK.Cli -- bootstrap --code TLK-BSTEP-2026-INIT   # один раз
+powershell -File scripts\get-session-token.ps1          # сессия подписью устройства
 dotnet run --project src\TOLIK.Agent -- --core-url http://127.0.0.1:5080 --token (Get-Content ~\.tolik\session-token)  # агент
-# WebUI: http://127.0.0.1:5080/  (токен из ~\.tolik\session-token)
+# Клиент: окно «Толик» (чат + голос). Регистрация — в клиенте, код из TOLIK_BOOTSTRAP_CODE
 ```
 
 ### Проверочные фразы (быстрый smoke)

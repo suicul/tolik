@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$InputRoot = "",
     [string]$OutputRoot = "",
     [string]$WhisperModel = "base"
@@ -43,7 +43,9 @@ foreach ($row in $needsTranscription) {
     
     if (Test-Path $jsonFile) {
         $transcription = Get-Content $jsonFile -Raw | ConvertFrom-Json
-        $text = $transcription.text -replace '[^\w\sа-яА-ЯёЁ\-.,!?;:()\/\[\]{}"]', '' -replace '\s+', ' ' -trim
+        # -trim is not a PowerShell operator (only -replace/-split/-join are); the chain
+        # ended in an unparseable token, so this whole script failed to load.
+        $text = ($transcription.text -replace '[^\w\sа-яА-ЯёЁ\-.,!?;:()\/\[\]{}"]', '' -replace '\s+', ' ').Trim()
         if ([string]::IsNullOrWhiteSpace($text)) { $text = "[unintelligible]" }
         $row.text = $text
         $row.status = "transcribed"
