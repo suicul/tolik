@@ -646,7 +646,7 @@ static async Task<IResult?> ProcessSimpleIntentAsync(
         }
         case ChatIntentKind.RecallMemory:
         {
-            var query = intent.Argument.Trim();
+            var query = MemoryContextBuilder.BuildSearchQuery(intent.Argument);
             if (query.Length == 0) return null;
             var found = await durableMemory.SearchAsync(principal.UserId, query, 5, cancellationToken);
             // Voice answers stay short: top-3 facts (dialogue logs are not facts).
@@ -1937,14 +1937,18 @@ app.MapPost("/memory", async (MemoryRequest request, HttpContext context, Identi
     try { var item = memory.Add(principal.UserId, request.Scope, request.Content ?? string.Empty, request.Source ?? "user", request.Confidence, request.Origin ?? MemoryOrigin.Lived); await using var db = await factory.CreateDbContextAsync(cancellationToken); db.Memories.Add(new TolikMemoryEntity { Id = item.Id, OwnerId = item.OwnerId, Scope = item.Scope.ToString(), Content = item.Content, Source = item.Source, Confidence = item.Confidence, CreatedAt = item.CreatedAt, Origin = item.Origin }); await db.SaveChangesAsync(cancellationToken); return Results.Ok(item); }
     catch (ArgumentException) { return Results.BadRequest(new { error = "invalid_memory" }); }
 });
-app.MapGet("/memory/search", async (string q, HttpContext context, IdentityService identity, ScopedMemory memory, IDbContextFactory<TolikDbContext> factory, CancellationToken cancellationToken) =>
+app.MapGet("/memory/search", async (string q, HttpContext context, IdentityService identity, ScopedMemory memory, DurableMemoryStore durableMemory, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
     var principal = header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ? await identity.AuthenticateAsync(header[7..], cancellationToken) : null;
     if (principal is null) return AuthenticationRequired(context);
-    var local = memory.Search(principal.UserId, q ?? string.Empty);
-    await using var db = await factory.CreateDbContextAsync(cancellationToken);
-    var persisted = await db.Memories.Where(x => (x.Scope != "Private" || x.OwnerId == principal.UserId) && x.Content.Contains(q ?? string.Empty)).OrderByDescending(x => x.Confidence).ToListAsync(cancellationToken);
+    // One owner for retrieval (DurableMemoryStore) and one bound for the probe. This
+    // endpoint used to carry its own inline query with its own privacy predicate, so the
+    // scoping rule lived twice and would drift the moment either copy changed; and an
+    // over-long q reached the store unclamped and turned into an unhandled exception.
+    string probe = MemoryContextBuilder.BuildSearchQuery(q);
+    var local = memory.Search(principal.UserId, probe);
+    var persisted = await durableMemory.SearchAsync(principal.UserId, probe, 100, cancellationToken);
     return Results.Ok(new { local, persisted });
 });
 app.MapDelete("/memory/{memoryId:guid}", async (Guid memoryId, HttpContext context, IdentityService identity, ScopedMemory memory, DurableMemoryStore durableMemory, AuditWriter audit, CancellationToken cancellationToken) =>
@@ -2266,7 +2270,7 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
         }
         case ChatIntentKind.RecallMemory:
         {
-            var query = intent.Argument.Trim();
+            var query = MemoryContextBuilder.BuildSearchQuery(intent.Argument);
             var found = await durableMemory.SearchAsync(principal.UserId, query, 8, cancellationToken);
             if (found.Count == 0)
                 return Results.Ok(new { answer = $"Не помню ничего про «{query}».", action = "recall_memory", source = "core" });
@@ -2354,7 +2358,8 @@ app.MapPost("/chat", async (ChatRequest request, HttpContext context, IdentitySe
     var route = router.ResolveWithFallback(routeKind, context.RequestServices.GetRequiredService<TOLIK.Infrastructure.Models.ModelPreferenceStore>().Get(principal.UserId));
     if (route is null) return Results.Problem("No model route configured.", statusCode: 503);
     await durableMemory.AddAsync(principal.UserId, MemoryScope.Private, $"Пользователь: {request.Message}", "chat.user", 1, cancellationToken);
-    var memories = await durableMemory.SearchAsync(principal.UserId, request.Message, MemoryContextBuilder.MaxItems, cancellationToken);
+    string chatProbe = MemoryContextBuilder.BuildSearchQuery(request.Message);
+    var memories = await durableMemory.SearchAsync(principal.UserId, chatProbe, MemoryContextBuilder.MaxItems, cancellationToken);
     var prompt = MemoryContextBuilder.Build(request.Message, memories);
     var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
     prompt = MemoryContextBuilder.AppendRules(prompt, learned);
@@ -2504,9 +2509,10 @@ app.MapPost("/voice/turn", async (VoiceTurnRequest request, HttpContext context,
         // Retrieval follows the same rule as the write: an unverified speaker must not
         // pull the owner's PRIVATE memory into the prompt (a relative would hear those
         // facts spoken back). Shared + public household memory is what they get.
+        string voiceProbe = MemoryContextBuilder.BuildSearchQuery(transcription.Text);
         var memories = ownerSpeaking
-            ? await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken)
-            : await durableMemory.SearchSharedAsync(transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
+            ? await durableMemory.SearchAsync(principal.UserId, voiceProbe, MemoryContextBuilder.MaxItems, cancellationToken)
+            : await durableMemory.SearchSharedAsync(voiceProbe, MemoryContextBuilder.MaxItems, cancellationToken);
         var prompt = MemoryContextBuilder.BuildVoice(transcription.Text, memories);
         var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
         prompt = MemoryContextBuilder.AppendRules(prompt, learned);
@@ -2615,9 +2621,10 @@ app.MapPost("/voice/turn-stream", async (VoiceTurnRequest request, HttpContext c
 
     // Retrieval follows the same rule as the write: an unverified speaker must not pull
     // the owner's PRIVATE memory into the prompt.
+    string voiceProbe = MemoryContextBuilder.BuildSearchQuery(transcription.Text);
     var memories = ownerSpeaking
-        ? await durableMemory.SearchAsync(principal.UserId, transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken)
-        : await durableMemory.SearchSharedAsync(transcription.Text, MemoryContextBuilder.MaxItems, cancellationToken);
+        ? await durableMemory.SearchAsync(principal.UserId, voiceProbe, MemoryContextBuilder.MaxItems, cancellationToken)
+        : await durableMemory.SearchSharedAsync(voiceProbe, MemoryContextBuilder.MaxItems, cancellationToken);
     var prompt = MemoryContextBuilder.BuildVoice(transcription.Text, memories);
     var learned = await rules.GetTopAsync(principal.UserId, 5, cancellationToken);
     prompt = MemoryContextBuilder.AppendRules(prompt, learned);

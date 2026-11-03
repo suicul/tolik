@@ -6,6 +6,34 @@ public static class MemoryContextBuilder
     public const int MaxCharacters = 6000;
     public const int VoiceReplyCharacters = 600;
 
+    /// <summary>
+    /// One owner for the memory-search probe bound. The store validates against it and this
+    /// class clamps utterances to it, so the two can never drift apart.
+    /// </summary>
+    public const int MaxSearchQueryCharacters = 256;
+
+    /// <summary>
+    /// Bounds an utterance before it is used as a memory search probe.
+    ///
+    /// Chat and voice pass the whole user sentence to retrieval, which is routinely far
+    /// longer than the store accepts, so the request died with an unhandled
+    /// ArgumentException ("Query is too long") → HTTP 500. Truncating here — once, in one
+    /// function — keeps the store's validated contract intact and makes every caller safe.
+    /// Only the PROBE is shortened; stored memories of any length still match.
+    /// </summary>
+    public static string BuildSearchQuery(string? utterance)
+    {
+        if (string.IsNullOrWhiteSpace(utterance))
+        {
+            return string.Empty;
+        }
+
+        string trimmed = utterance.Trim();
+        return trimmed.Length <= MaxSearchQueryCharacters
+            ? trimmed
+            : trimmed[..MaxSearchQueryCharacters];
+    }
+
     public static string Build(string request, IReadOnlyList<MemoryItem> memories)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(request);

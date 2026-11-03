@@ -1,15 +1,21 @@
 // Live check of the desktop voice path against the running TOLIK stack.
 // Not a unit test: it needs Core, the voice service and a real session token.
-// Usage: dotnet run --project tools/VoiceProbe
+// Usage: dotnet run --project tools/VoiceProbe <path-to-wav>
+//
+// Authentication goes through ClientTokenSource, i.e. the shipped client's path: the
+// device signs a challenge and Core issues a session. It used to build a LocalTokenSource
+// (dev token only), which stops working the moment Genesis has run — so the probe was
+// silently unusable on any real installation.
 using TOLIK.Desktop.Bridge;
 using TOLIK.Desktop.Voice;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
-var options = CoreLinkOptions.FromEnvironment();
+CoreLinkOptions options = CoreLinkOptions.FromEnvironment();
 Console.WriteLine($"core: {options.BaseUri}");
 
-var tokens = new LocalTokenSource(options);
+using ClientTokenSource tokens = ClientTokenSource.Create(options);
+Console.WriteLine($"auth: device={tokens.HasDeviceIdentity}");
 TokenProbe probe = new(tokens, options);
 string wavPath = args.Length > 0 ? args[0] : string.Empty;
 if (string.IsNullOrWhiteSpace(wavPath) || !File.Exists(wavPath))

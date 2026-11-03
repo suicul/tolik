@@ -5,6 +5,15 @@ namespace TOLIK.Infrastructure.Persistence;
 
 public sealed class DurableMemoryStore(IDbContextFactory<TolikDbContext> dbFactory)
 {
+    /// <summary>
+    /// Longest accepted search probe. The store rejects longer strings rather than guessing
+    /// what the caller meant, so any caller that searches with raw user text must bound it
+    /// first — see <see cref="MemoryContextBuilder.BuildSearchQuery"/>, the single owner of
+    /// that conversion. An unbounded utterance reaching here surfaced as an unhandled
+    /// ArgumentException → HTTP 500 on /chat and on the voice turn path.
+    /// </summary>
+    public const int MaxQueryLength = MemoryContextBuilder.MaxSearchQueryCharacters;
+
     public async Task<MemoryItem> AddAsync(
         Guid ownerId,
         MemoryScope scope,
@@ -42,7 +51,7 @@ public sealed class DurableMemoryStore(IDbContextFactory<TolikDbContext> dbFacto
             throw new ArgumentException("Requester is required.", nameof(requesterId));
         if (query is null)
             throw new ArgumentNullException(nameof(query));
-        if (query.Length > 256)
+        if (query.Length > MaxQueryLength)
             throw new ArgumentException("Query is too long.", nameof(query));
         if (limit is < 1 or > 1000)
             throw new ArgumentOutOfRangeException(nameof(limit));
@@ -103,7 +112,7 @@ public sealed class DurableMemoryStore(IDbContextFactory<TolikDbContext> dbFacto
         CancellationToken cancellationToken = default)
     {
         if (query is null) throw new ArgumentNullException(nameof(query));
-        if (query.Length > 256) throw new ArgumentException("Query is too long.", nameof(query));
+        if (query.Length > MaxQueryLength) throw new ArgumentException("Query is too long.", nameof(query));
         if (limit is < 1 or > 1000) throw new ArgumentOutOfRangeException(nameof(limit));
 
         var normalized = query.Trim();
