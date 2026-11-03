@@ -810,6 +810,54 @@ app.MapGet("/auth/local-token", async (HttpContext context, IdentityService iden
     return Results.Ok(new { sessionToken = issued.Value.SessionToken, sessionId = issued.Value.SessionId, expiresAt = issued.Value.ExpiresAt });
 });
 
+// Session renewal for an already-enrolled device (docs/SECURITY.md §7/§11): the device
+// signs a one-time challenge with the P-256 key it enrolled at bootstrap. This is the
+// ordinary way a shipped client authenticates — the dev token endpoint is NOT, and is
+// refused outright after Genesis. Neither endpoint takes a bearer token: the device
+// public key is the credential, and both answers are deliberately identical for every
+// failure so an unauthenticated caller cannot enumerate installations or devices.
+app.MapPost("/auth/device/challenge", async (DeviceSessionChallengeRequest request, IdentityService identity, AuditWriter audit, HttpContext context, CancellationToken cancellationToken) =>
+{
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    var challenge = await identity.IssueDeviceSessionChallengeAsync(request.InstallationId ?? string.Empty, TimeSpan.FromMinutes(5), cancellationToken);
+    // An unknown or revoked installation gets the same shape as a bad request: no oracle.
+    if (challenge is null)
+    {
+        await audit.WriteAsync(correlationId, "auth.device.challenge", "DENY", "challenge_denied", cancellationToken);
+        return Results.Json(new { error = "challenge_denied", correlationId = context.Items["CorrelationId"] }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    await audit.WriteAsync(correlationId, "auth.device.challenge", "ALLOW", "challenge_issued", cancellationToken);
+    return Results.Ok(new { challenge = challenge.Token, expiresAt = challenge.ExpiresAt });
+});
+
+app.MapPost("/auth/device/session", async (DeviceSessionRequest request, IdentityService identity, AuditWriter audit, HttpContext context, CancellationToken cancellationToken) =>
+{
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    var issued = await identity.RedeemDeviceSessionChallengeAsync(
+        request.InstallationId ?? string.Empty,
+        request.Challenge ?? string.Empty,
+        request.Signature ?? string.Empty,
+        GetSessionLifetime(context),
+        cancellationToken);
+    if (issued is null)
+    {
+        await audit.WriteAsync(correlationId, "auth.device.session", "DENY", "device_session_denied", cancellationToken);
+        return Results.Json(new { error = "device_session_denied", correlationId = context.Items["CorrelationId"] }, statusCode: StatusCodes.Status401Unauthorized);
+    }
+
+    await audit.WriteAsync(correlationId, "auth.device.session", "ALLOW", "device_session_issued", cancellationToken);
+    return Results.Ok(new
+    {
+        userId = issued.Value.Principal.UserId,
+        deviceId = issued.Value.Principal.DeviceId,
+        role = issued.Value.Principal.Role,
+        sessionId = issued.Value.Principal.SessionId,
+        sessionToken = issued.Value.SessionToken,
+        expiresAt = issued.Value.ExpiresAt,
+    });
+});
+
 app.MapPost("/auth/session/{sessionId:guid}/revoke", async (Guid sessionId, IdentityService identity, AuditWriter audit, HttpContext context, CancellationToken cancellationToken) =>
 {
     var header = context.Request.Headers.Authorization.ToString();
@@ -3410,6 +3458,8 @@ app.Run();
 
 public sealed record BootstrapChallengeRequest(string? BootstrapCode);
 public sealed record BootstrapRequest(string? BootstrapCode, string InstallationId, string PublicKey, string? Challenge, string? Signature);
+public sealed record DeviceSessionChallengeRequest(string? InstallationId);
+public sealed record DeviceSessionRequest(string? InstallationId, string? Challenge, string? Signature);
 public sealed record FileToolRequest(string Path);
 public sealed record PlanRequest(string? Request, int MaxSteps = 8, int BudgetSeconds = 300, string[]? Steps = null, bool AutoPlan = false);
 public sealed record MemoryRequest(MemoryScope Scope, string? Content, string? Source, double Confidence = 1, string? Origin = null);

@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -100,12 +100,36 @@ public sealed class IdentityService(
         // bootstrap being consumed or revoked.
         if (await db.GenesisIdentity.AnyAsync(cancellationToken))
             throw new InvalidOperationException("Genesis already performed: owner replacement is forbidden.");
-        if (await db.Users.AnyAsync(x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken)) throw new InvalidOperationException("Owner enrollment has already been consumed.");
-        var user = new TolikUser { Id = Guid.NewGuid(), Role = TolikRoles.OwnerName, CreatedAt = now };
+
+        // Owner re-enrollment without Genesis. The strict rule used to be "an Owner row
+        // exists → refuse forever", which had a hole: a lost device key (OS reinstall,
+        // DPAPI loss, disk failure) left the installation permanently unable to
+        // authenticate, and the only remaining route needed an already-working session.
+        // The narrowed rule keeps the owner IDENTITY (memory, audit and history stay
+        // attached) and admits a new DEVICE only when the owner has no usable device left.
+        // It is still gated by the single-use bootstrap code and still forbidden after
+        // Genesis, so it cannot be used to replace a healthy owner.
+        var owner = await db.Users.SingleOrDefaultAsync(
+            x => x.Role == TolikRoles.OwnerName && !x.Revoked, cancellationToken);
+        if (owner is not null
+            && await db.Devices.AnyAsync(x => x.UserId == owner.Id && !x.Revoked, cancellationToken))
+        {
+            throw new InvalidOperationException("Owner enrollment has already been consumed.");
+        }
+
+        var user = owner ?? new TolikUser { Id = Guid.NewGuid(), Role = TolikRoles.OwnerName, CreatedAt = now };
         var device = new TolikDevice { Id = Guid.NewGuid(), UserId = user.Id, InstallationId = installationId, PublicKey = publicKey, CreatedAt = now };
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var session = new TolikSession { Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id, TokenHash = HashToken(token), CreatedAt = now, ExpiresAt = now.Add(sessionLifetime) };
-        db.AddRange(user, device, session); verifiedBootstrap.ConsumedAt = now; verifiedChallenge.ConsumedAt = now;
+        if (owner is null)
+        {
+            db.Users.Add(user);
+        }
+        else
+        {
+            logger.LogWarning("Owner device re-enrolled on an existing owner identity (previous device unusable).");
+        }
+        db.AddRange(device, session); verifiedBootstrap.ConsumedAt = now; verifiedChallenge.ConsumedAt = now;
         await db.SaveChangesAsync(cancellationToken); await tx.CommitAsync(cancellationToken);
         return (user, device, session.Id, token);
     }
@@ -139,6 +163,120 @@ public sealed class IdentityService(
     }
 
     public async Task<bool> RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default) { await using var db = await contextFactory.CreateDbContextAsync(cancellationToken); var session = await db.Sessions.SingleOrDefaultAsync(x => x.Id == sessionId, cancellationToken); if (session is null) return false; session.RevokedAt = DateTimeOffset.UtcNow; await db.SaveChangesAsync(cancellationToken); return true; }
+
+    /// <summary>
+    /// Issues a one-time challenge for an ALREADY ENROLLED device to sign, so it can
+    /// obtain a new session without an operator and without a dev backdoor.
+    ///
+    /// The first client could only get a session through the bootstrap (consumed once,
+    /// at Genesis) or through the dev token endpoint (refused after Genesis). That left
+    /// the shipped desktop client unable to authenticate at all once the instance was
+    /// real — and the dev flag was the only thing making it appear to work.
+    ///
+    /// Returns null when the installation is unknown or its device was revoked: the
+    /// caller must not learn which. Fail closed — no challenge, no session.
+    /// </summary>
+    public async Task<DeviceChallenge?> IssueDeviceSessionChallengeAsync(
+        string installationId,
+        TimeSpan lifetime,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(installationId) || installationId.Length > 128) return null;
+
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var device = await db.Devices.SingleOrDefaultAsync(x => x.InstallationId == installationId, cancellationToken);
+        if (device is null || device.Revoked)
+        {
+            return null;
+        }
+
+        // The owning user must still be able to hold a session (a revoked owner cannot
+        // be renewed back into existence through the device).
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == device.UserId, cancellationToken);
+        if (user is null || user.Revoked)
+        {
+            return null;
+        }
+
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var now = DateTimeOffset.UtcNow;
+        db.DeviceSessionChallenges.Add(new TolikDeviceSessionChallenge
+        {
+            Id = Guid.NewGuid(),
+            DeviceId = device.Id,
+            TokenHash = HashToken(token),
+            CreatedAt = now,
+            ExpiresAt = now.Add(lifetime),
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return new DeviceChallenge(token, now.Add(lifetime));
+    }
+
+    /// <summary>
+    /// Exchanges a signed one-time challenge for a fresh session. The signature is
+    /// verified against the P-256 key enrolled at bootstrap time, so possession of the
+    /// device's private key is the only thing that produces a session — the network
+    /// location and the installation id alone are worth nothing (SECURITY §2/§11).
+    ///
+    /// Returns null for every failure (unknown device, bad signature, expired or already
+    /// consumed challenge, revoked device). The challenge is consumed only after the
+    /// signature verifies, and consumption is atomic with session creation, so a replay
+    /// finds the challenge gone.
+    /// </summary>
+    public async Task<(SessionPrincipal Principal, string SessionToken, DateTimeOffset ExpiresAt)?> RedeemDeviceSessionChallengeAsync(
+        string installationId,
+        string challengeToken,
+        string signatureBase64,
+        TimeSpan sessionLifetime,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(installationId) || installationId.Length > 128) return null;
+        if (string.IsNullOrWhiteSpace(challengeToken) || string.IsNullOrWhiteSpace(signatureBase64)) return null;
+
+        await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var tx = await db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, cancellationToken);
+        var now = DateTimeOffset.UtcNow;
+
+        var device = await db.Devices.SingleOrDefaultAsync(x => x.InstallationId == installationId, cancellationToken);
+        if (device is null || device.Revoked) return null;
+
+        var challenge = await db.DeviceSessionChallenges
+            .SingleOrDefaultAsync(x => x.TokenHash == HashToken(challengeToken), cancellationToken);
+        if (challenge is null
+            || challenge.DeviceId != device.Id
+            || challenge.ConsumedAt is not null
+            || challenge.ExpiresAt <= now)
+        {
+            return null;
+        }
+
+        if (!DeviceChallengeVerifier.Verify(challengeToken, device.PublicKey, signatureBase64))
+        {
+            logger.LogWarning("Device session renewal denied: signature did not verify (device {DeviceId}).", device.Id);
+            return null;
+        }
+
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == device.UserId, cancellationToken);
+        if (user is null || user.Revoked) return null;
+
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var session = new TolikSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = device.Id,
+            TokenHash = HashToken(token),
+            CreatedAt = now,
+            ExpiresAt = now.Add(sessionLifetime),
+        };
+        challenge.ConsumedAt = now;
+        db.Sessions.Add(session);
+        await db.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
+
+        logger.LogInformation("Device session renewed for device {DeviceId}.", device.Id);
+        return (new SessionPrincipal(user.Id, device.Id, session.Id, user.Role), token, session.ExpiresAt);
+    }
 
     /// <summary>
     /// Enrolls a trusted person with an owner-issued enrollment token (docs/SECURITY.md

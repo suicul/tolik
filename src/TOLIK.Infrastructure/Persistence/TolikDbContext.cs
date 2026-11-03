@@ -10,6 +10,7 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
     public DbSet<TolikSession> Sessions => Set<TolikSession>();
     public DbSet<TolikBootstrap> Bootstraps => Set<TolikBootstrap>();
     public DbSet<TolikDeviceChallenge> DeviceChallenges => Set<TolikDeviceChallenge>();
+    public DbSet<TolikDeviceSessionChallenge> DeviceSessionChallenges => Set<TolikDeviceSessionChallenge>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
     public DbSet<TolikTaskEntity> Tasks => Set<TolikTaskEntity>();
     public DbSet<TolikMemoryEntity> Memories => Set<TolikMemoryEntity>();
@@ -82,6 +83,17 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
         challenge.Property(x => x.TokenHash).HasMaxLength(128).IsRequired();
         challenge.HasIndex(x => x.TokenHash).IsUnique();
         challenge.HasOne<TolikBootstrap>().WithMany().HasForeignKey(x => x.BootstrapId).OnDelete(DeleteBehavior.Cascade);
+
+        // Session-renewal challenges (docs/SECURITY.md §7): one-time, short-lived, bound
+        // to a device. No cascade from the device — an enrollment-shaped cascade would
+        // let a device deletion silently erase the trail that proves a challenge existed.
+        var sessionChallenge = modelBuilder.Entity<TolikDeviceSessionChallenge>();
+        sessionChallenge.ToTable("tolik_device_session_challenges");
+        sessionChallenge.HasKey(x => x.Id);
+        sessionChallenge.Property(x => x.TokenHash).HasMaxLength(128).IsRequired();
+        sessionChallenge.HasIndex(x => x.TokenHash).IsUnique();
+        sessionChallenge.HasOne<TolikDevice>().WithMany().HasForeignKey(x => x.DeviceId).OnDelete(DeleteBehavior.Restrict);
+        sessionChallenge.HasIndex(x => x.ExpiresAt);
 
         var audit = modelBuilder.Entity<AuditEvent>();
         audit.ToTable("audit_events");

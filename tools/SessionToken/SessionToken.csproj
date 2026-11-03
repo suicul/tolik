@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>TOLIK.SessionToken</RootNamespace>
+  </PropertyGroup>
+
+  <!-- Dev-only helper for scripts and live probes. It deliberately references the
+       desktop client so the challenge/signature exchange has ONE implementation: the
+       PowerShell side calls this instead of re-doing device crypto (that duplicate had
+       already drifted and broken). Not in TOLIK.sln, so build and tests are unchanged. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\TOLIK.Desktop\TOLIK.Desktop.csproj" />
+  </ItemGroup>
+
+</Project>

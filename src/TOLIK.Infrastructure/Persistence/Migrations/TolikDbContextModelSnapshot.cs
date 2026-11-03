@@ -288,6 +288,41 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("tolik_device_challenges", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikDeviceSessionChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("ConsumedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("DeviceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DeviceId");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.ToTable("tolik_device_session_challenges", (string)null);
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikGenesisIdentity", b =>
                 {
                     b.Property<Guid>("InstanceId")
@@ -559,6 +594,15 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("BootstrapId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikDeviceSessionChallenge", b =>
+                {
+                    b.HasOne("TOLIK.Infrastructure.Persistence.TolikDevice", null)
+                        .WithMany()
+                        .HasForeignKey("DeviceId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
 

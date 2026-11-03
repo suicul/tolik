@@ -33,7 +33,7 @@ public partial class App : Application
     private Icon? _trayIcon;
 
     private CoreExpressionClient? _coreLink;
-    private LocalTokenSource? _linkTokens;
+    private ISessionTokenSource? _linkTokens;
     private CancellationTokenSource? _linkCts;
     private CoreHealthWatcher? _healthWatcher;
     private SpeechPresenter? _speech;
@@ -179,7 +179,7 @@ public partial class App : Application
         _desktopWatcher = null;
         _linkCts?.Cancel();
         _coreLink = null;
-        _linkTokens?.Dispose();
+        (_linkTokens as IDisposable)?.Dispose();
         _linkTokens = null;
         _linkCts?.Dispose();
         _linkCts = null;
@@ -215,7 +215,9 @@ public partial class App : Application
         }
 
         CoreLinkOptions options = CoreLinkOptions.FromEnvironment();
-        var tokens = new LocalTokenSource(options);
+        // Real credential path (device signature) with the dev token as an explicit last
+        // resort — see ClientTokenSource for why that order is load-bearing.
+        var tokens = ClientTokenSource.Create(options);
         var client = new CoreExpressionClient(options, tokens, () => new ClientWebSocketSocket());
         var cts = new CancellationTokenSource();
 
