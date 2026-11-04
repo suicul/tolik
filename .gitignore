@@ -29,3 +29,6 @@ CosyVoice3/
 backups/
 snapshots/
 __pycache__/
+
+# Local OpenCode session transcripts (private, large) — never committed.
+opencode.json
