@@ -1,18 +1,51 @@
-# Post-Genesis Roadmap (explicitly NOT pre-Genesis scope)
+# Post-Genesis Roadmap — что сознательно остаётся после церемонии
 
-Rule (§27): anything here is recorded, never implemented during PRE-GENESIS.
+Обновлено 05.11.2026 по решению владельца (сессия `opencode.json`, idx 2437):
 
-- Vision: screenshots, OCR, camera, object/person recognition, vision-as-context.
-- Wake word + always-listening trigger interface (mic-always-on indicator design).
-- Android client (Kotlin; contracts exist in `clients/TOLIK.Android/`).
-- Desktop avatar / tray / Arduino embodiment (realtime event hooks already exist).
-- VPS migration (runbook exists in `docs/VPS.md`; distant-future by owner decision).
-- Advanced vector memory (pgvector), knowledge graph, cross-user knowledge map.
-- Telegram remote bot, command packs/marketplace, home automation.
-- Advanced personality, self-learning loops, game-specific modes.
-- CosyVoice fine-tune (owner's track; dataset pipeline ready, review pending).
-- TTS normalization dictionary, expires_at schema, owner notifications channel.
-- P1 backlog from Luxify extraction: unified heard+done history view,
-  voice yes/no confirmation input (see `docs/luxify-feature-analysis.md`).
-- gpt-oss:20b benchmark (only if qwen3:4b disappoints).
-- Ask-policy for coding model choice (cloud vs local + remembered preference).
+> «большинство функционала кроме vr надо бы сделать не post genesis а pre
+> genesis то есть до проведения церемонии должно быть как можно больше
+> функционала и меньше ошибок»
+
+Правило, которое здесь действует: **всё, что можно довести до церемонии,
+доводится до церемонии**. Этот файл — не список «когда-нибудь потом», а
+перечень того, что честно не имеет смысла делать раньше рождения: нужна
+физическая инфраструктура, внешнее железо или накопленная история.
+
+Рабочий план доведения — `docs/ПЛАН-ЭТАЛОН.md`. Если функционала нет ни там,
+ни здесь — значит он просто не запланирован, а не «отложен».
+
+## Остаётся после церемонии
+
+| Направление | Почему именно после | Условие начала |
+|---|---|---|
+| **VR / Meta Quest 3S** | Требует отдельного устройства и собственного пространственного сценария; единственное направление, которое владелец прямо оставил за церемонией | Появление гарнитуры |
+| **Камеры и домашнее зрение** | Нужны камеры, политика хранения сырого видео и правила приватности для домочадцев | Отдельное решение владельца по приватности |
+| **Wake word / постоянное прослушивание** | Всегда включённый микрофон — вопрос согласия и приватности, а не техники | Явное согласие всех, кто живёт в доме |
+| **Перенос Core на VPS** | Нужен внешний хостинг и постоянная сеть; до рождения личности переносить нечего | Стабильная работа дома + решение о хостинге |
+| **pgvector и семантический поиск** | Сначала должен появиться объём памяти, на котором семантика что-то даёт; полнотекст PostgreSQL покрывает ближайшие потребности | Накопленная история, при которой точный поиск перестаёт попадать |
+| **Telegram-бот и удалённые каналы** | Вторичный интерфейс; сначала должны работать основные клиенты | Работающие Windows и Android |
+| **Домашняя автоматизация** | Требует оборудования и протоколов, которых пока нет | Появление устройств |
+| **Marketplace команд / пакеты навыков** | Имеет смысл, когда есть чему копиться — своим навыкам | Работающий цикл обучения навыкам |
+| **Игровые режимы** | Следствие computer use, а не отдельная цель (AGENTS.md §25) | Работающий computer use |
+| **CosyVoice fine-tune** | Ждёт проверенного набора данных и согласия; сейчас TTS — заменяемый placeholder | Проверенный датасет |
+| **Продвинутая личность и self-learning сверх контуров** | Нужна накопленная история отношений, которой до рождения нет | Месяцы реального общения |
+
+## Перенесено в pre-genesis (было здесь раньше)
+
+Эти пункты раньше стояли в этом файле как post-genesis. По решению idx 2437
+они переехали в `docs/ПЛАН-ЭТАЛОН.md`:
+
+- Android-клиент — Фаза 4, задача 4.5.
+- Desktop-цефалон и его объём — Фаза 4, задача 4.4.
+- Чат и голос в Windows-клиенте — сделано 03.11.2026.
+- Подтверждения рискованных действий — Фаза 1, задача 1.2.
+- Качество поиска по памяти — Фаза 4, задача 4.1.
+- Enrollment родственников и приватность памяти — Фаза 4, задача 4.2.
+- Контур саморазвития и самообновления — Фаза 5.
+- Метрики, награды, согласие, доверие, бюджеты — Фаза 5, задача 5.4.
+
+## Чего здесь намеренно нет
+
+Списка «хотелок». Если пункт не имеет условия начала и не привязан к
+инфраструктуре — он либо в плане, либо его не существует. Обещание без
+условия запуска — это способ никогда не начинать.
