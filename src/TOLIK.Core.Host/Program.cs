@@ -113,6 +113,10 @@ builder.Services.AddHostedService<CephalonExpressionService>();
 // regardless of connected renderers/users (TOLIK exists between conversations).
 // It creates MOTIVATION, never permission — this authorizes nothing.
 builder.Services.AddSingleton<MindRuntime>();
+// PLAN-ЭТАЛОН Phase 2 (blockers Б1/Б3): the mind's continuity across restarts. Both
+// stores are singletons over the DbContextFactory, exactly like ProactiveStore.
+builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.MindSnapshotStore>();
+builder.Services.AddSingleton<TOLIK.Infrastructure.Persistence.GenesisSeedStore>();
 builder.Services.AddHostedService<MindRuntimeService>();
 // Emergency Stop state (Phase G — PLAN REFORM PRG-4a): the owner's soft kill switch
 // — a runtime autonomy pause (NOT LOCKED). In-memory by design (a restart is the
@@ -181,12 +185,45 @@ var soundboardLimiter = new SoundboardRateLimiter();
 // those are skipped (Migrate would fail with "table already exists").
 await ApplyPendingMigrationsAsync(app.Services);
 
+// Mind continuity (PLAN-ЭТАЛОН Phase 2.3 — blockers Б1/Б3): restore the Genesis seed and
+// the mind's state from the database BEFORE anything can read or mutate them. Without this
+// the mind was reborn empty on every restart — losing its failure streak (the MI-7
+// self-awareness) and, worse, dropping a BORN identity back to "NotSeeded" so it could
+// never read the seed it was born with.
+var mindRuntime = app.Services.GetRequiredService<MindRuntime>();
+try
+{
+    var seedStore = app.Services.GetRequiredService<TOLIK.Infrastructure.Persistence.GenesisSeedStore>();
+    var restoredSeed = await seedStore.LoadLatestAsync();
+    if (restoredSeed is not null)
+    {
+        seedStore.Restore(mindRuntime.GenesisSeed, restoredSeed);
+        app.Logger.LogInformation("Genesis seed restored from the database: {Status}.", mindRuntime.GenesisSeed.Status);
+    }
+
+    var snapshotStore = app.Services.GetRequiredService<TOLIK.Infrastructure.Persistence.MindSnapshotStore>();
+    var restoredMind = await snapshotStore.LoadLatestAsync();
+    if (restoredMind is not null)
+    {
+        mindRuntime.Restore(restoredMind);
+        app.Logger.LogInformation(
+            "Mind state restored: failure_streak={Streak} activity={Activity} recorded_at={RecordedAt:O}.",
+            restoredMind.ConsecutiveFailures, restoredMind.Snapshot.ActivityLevel, restoredMind.Snapshot.UpdatedAt);
+    }
+}
+catch (Exception ex)
+{
+    // The mind is not a security boundary, so an unreadable snapshot must not stop Core
+    // from serving — but it IS reported. A mind that silently restarted empty would hide
+    // exactly the continuity defect this block exists to fix.
+    app.Logger.LogWarning(ex, "Mind continuity could not be restored; the mind starts fresh.");
+}
+
 app.Services.GetRequiredService<TaskLifecycle>().EventPublished += ev =>
     realtime.PublishToTaskOwner(ev.TaskId, System.Text.Json.JsonSerializer.Serialize(new { ev.TaskId, ev.Kind, ev.Detail, ev.OccurredAt }));
 // MindRuntime feeding (PLAN REFORM PRG-1a): the task lifecycle events drive the
 // mind's activity/novelty/curiosity/satisfaction/frustration — real events only
 // (§50: nothing fabricated). Unknown kinds are ignored (additive, forward-safe).
-var mindRuntime = app.Services.GetRequiredService<MindRuntime>();
 app.Services.GetRequiredService<TaskLifecycle>().EventPublished += ev =>
 {
     switch (ev.Kind)
@@ -991,11 +1028,67 @@ app.MapPost("/security/unlock", async (UnlockRequest request, HttpContext contex
     return Results.Ok(new { locked = false, transitioned });
 });
 
+// Genesis seed loading (PLAN-ЭТАЛОН Phase 2.1 — blocker Б1). Pre-ceremony the ceremony's
+// seed DATA may be loaded, but the mind reads it ONLY after the activation, which happens
+// inside the ceremony (docs/mind.md MI-9/§7). Owner-only + MFA: the seed carries TOLIK's
+// temperament and core values, so writing it is an identity act, not a preference change.
+// This endpoint cannot activate — Activate() has exactly one caller, the ceremony.
+app.MapPost("/genesis/seed", async (GenesisSeedRequest request, HttpContext context, IdentityService identity, MindRuntime mind, TOLIK.Infrastructure.Persistence.GenesisSeedStore seedStore, AuditWriter audit, CancellationToken cancellationToken) =>
+{
+    var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
+    if (principal is null) return AuthenticationRequired(context);
+    var correlationId = (Guid)context.Items["CorrelationId"]!;
+    if (!TolikRoles.IsOwner(principal.Role))
+    {
+        await audit.WriteAsync(correlationId, "genesis.seed", "DENY", "owner_role_required", cancellationToken);
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+    }
+
+    var mfa = await identity.VerifyMfaAsync(request.MfaDeviceId, request.MfaCode ?? string.Empty, cancellationToken);
+    if (!mfa.Success)
+    {
+        await audit.WriteAsync(correlationId, "genesis.seed", "DENY", "mfa_required", cancellationToken);
+        return Results.Json(new { error = "mfa_required", correlationId }, statusCode: StatusCodes.Status403Forbidden);
+    }
+
+    var data = new TOLIK.Core.GenesisSeedData(
+        (request.Temperament ?? string.Empty).Trim(),
+        (request.CoreValues ?? []).Select(v => (v ?? string.Empty).Trim()).ToArray(),
+        DateTimeOffset.UtcNow);
+    if (!data.IsValid)
+    {
+        // The domain's own validation decides, not a copy of its rules (fail closed).
+        await audit.WriteAsync(correlationId, "genesis.seed", "DENY", "seed_invalid", cancellationToken);
+        return Results.Json(new { error = "seed_invalid", correlationId }, statusCode: StatusCodes.Status400BadRequest);
+    }
+
+    try
+    {
+        mind.GenesisSeed.Load(data);
+    }
+    catch (InvalidOperationException)
+    {
+        // Already activated: the identity is born, the re-seed is forbidden (mind.md §7).
+        await audit.WriteAsync(correlationId, "genesis.seed", "DENY", "seed_already_activated", cancellationToken);
+        return Results.Conflict(new { error = "seed_already_activated", correlationId });
+    }
+
+    await seedStore.SaveAsync(mind.GenesisSeed, cancellationToken);
+    await audit.WriteAsync(correlationId, "genesis.seed", "ALLOW", "seed_loaded", cancellationToken);
+    return Results.Ok(new
+    {
+        status = mind.GenesisSeed.Status.ToString(),
+        temperament = data.Temperament,
+        coreValues = data.CoreValues.Length,
+        correlationId
+    });
+});
+
 // Genesis ceremony (docs/genesis.md, Phase 6): one-time birth of the permanent
 // instance. Owner-present + MFA + preflight gates all pass → the identity row and the
 // Genesis audit event are written in ONE transaction (no half-born state). Rerun is
 // impossible; after Genesis, owner replacement and silent history deletion are forbidden.
-app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCeremonyRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Genesis.GenesisService genesis, IDbContextFactory<TOLIK.Infrastructure.Persistence.TolikDbContext> factory, AuditWriter audit, CancellationToken cancellationToken) =>
+app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCeremonyRequest request, HttpContext context, IdentityService identity, TOLIK.Infrastructure.Genesis.GenesisService genesis, IDbContextFactory<TOLIK.Infrastructure.Persistence.TolikDbContext> factory, AuditWriter audit, MindRuntime mind, CancellationToken cancellationToken) =>
 {
     var principal = await AuthenticateRequestAsync(context, identity, cancellationToken);
     if (principal is null) return AuthenticationRequired(context);
@@ -1028,6 +1121,24 @@ app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCere
     {
         var identityRow = await genesis.PerformCeremonyAsync(
             principal!.UserId, request.CodeIdentity ?? string.Empty, request.KnowledgeIdentity ?? string.Empty, correlationId, cancellationToken);
+
+        // The DB row flipped Activated inside the ceremony transaction (Phase 2.2). The
+        // in-memory runtime flips here, after the commit — the mind may read its seed only
+        // once the birth is durable. If the runtime has no seed loaded (should not happen:
+        // the preflight gate requires the row), the identity is still born and the next
+        // start hydrates the activation from the database, so this self-heals — but it is
+        // reported instead of swallowed.
+        var seedActivated = false;
+        try
+        {
+            mind.GenesisSeed.Activate();
+            seedActivated = true;
+        }
+        catch (InvalidOperationException)
+        {
+            await audit.WriteAsync(correlationId, "genesis.ceremony", "WARN", "seed_activation_deferred", cancellationToken);
+        }
+
         return Results.Ok(new
         {
             instanceId = identityRow.InstanceId,
@@ -1036,7 +1147,9 @@ app.MapPost("/genesis/ceremony", async (TOLIK.Infrastructure.Genesis.GenesisCere
             codeIdentity = identityRow.CodeIdentity,
             knowledgeIdentity = identityRow.KnowledgeIdentity,
             lifecycleState = identityRow.LifecycleState,
-            ownerIdentity = identityRow.OwnerIdentity
+            ownerIdentity = identityRow.OwnerIdentity,
+            seedStatus = mind.GenesisSeed.Status.ToString(),
+            seedActivated
         });
     }
     catch (InvalidOperationException)
@@ -3488,6 +3601,8 @@ public sealed record MfaEnrollRequest(Guid DeviceId);
 public sealed record MfaVerifyRequest(Guid DeviceId, string Code);
 public sealed record LockRequest(string? Reason);
 public sealed record UnlockRequest(string? UnlockCode);
+// PLAN-ЭТАЛОН Phase 2.1 — the pre-ceremony Genesis seed (data only; activation is here never).
+public sealed record GenesisSeedRequest(string? Temperament, string[]? CoreValues, Guid MfaDeviceId, string? MfaCode);
 public sealed record ModelPreferenceRequest(string? Mode);
 public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);

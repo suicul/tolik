@@ -65,6 +65,25 @@ public sealed class GenesisCeremonyTests
         restoreTested = true
     };
 
+    /// <summary>
+    /// Loads the Genesis seed. Since PLAN-ЭТАЛОН Phase 2.2 the seed is a PREFLIGHT GATE:
+    /// the ceremony is the birth of an identity together with its temperament and values
+    /// (docs/genesis-ceremony.md Шаг 4), so a seedless ceremony is refused instead of
+    /// silently producing a mind that can never read a seed. This is the step the runbook
+    /// always described and the code did not enforce.
+    /// </summary>
+    private static async Task SeedAsync(HttpClient client, Guid deviceId, string code)
+    {
+        var response = await client.PostAsJsonAsync("/genesis/seed", new
+        {
+            temperament = "calm-technical-dry-humor",
+            coreValues = new[] { "honesty", "non-destruction" },
+            mfaDeviceId = deviceId,
+            mfaCode = code
+        });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     [Fact]
     public async Task Ceremony_performs_atomically_and_rerun_is_impossible()
     {
@@ -76,7 +95,10 @@ public sealed class GenesisCeremonyTests
         // Identity not found before the ceremony.
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/genesis/identity")).StatusCode);
 
-        var ceremony = await client.PostAsJsonAsync("/genesis/ceremony", CeremonyBody(deviceId, await EnrollMfaAndGetCurrentCodeAsync(client, deviceId)));
+        var seedCode = await EnrollMfaAndGetCurrentCodeAsync(client, deviceId);
+        await SeedAsync(client, deviceId, seedCode);
+
+        var ceremony = await client.PostAsJsonAsync("/genesis/ceremony", CeremonyBody(deviceId, seedCode));
         Assert.Equal(HttpStatusCode.OK, ceremony.StatusCode);
         var identity = await ceremony.Content.ReadFromJsonAsync<JsonElement>();
         Assert.Equal("LIFETIME", identity.GetProperty("lifecycleState").GetString());
@@ -205,7 +227,9 @@ public sealed class GenesisCeremonyTests
         using var client = factory.CreateClient();
         var (sessionToken, deviceId) = await EnrollOwnerWithDeviceAsync(client);
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", sessionToken);
-        var ceremony = await client.PostAsJsonAsync("/genesis/ceremony", CeremonyBody(deviceId, await EnrollMfaAndGetCurrentCodeAsync(client, deviceId)));
+        var code = await EnrollMfaAndGetCurrentCodeAsync(client, deviceId);
+        await SeedAsync(client, deviceId, code);
+        var ceremony = await client.PostAsJsonAsync("/genesis/ceremony", CeremonyBody(deviceId, code));
         Assert.Equal(HttpStatusCode.OK, ceremony.StatusCode);
 
         // Owner replacement via re-bootstrap is forbidden (docs/genesis.md After Genesis):

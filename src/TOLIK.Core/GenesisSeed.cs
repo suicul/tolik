@@ -54,6 +54,19 @@ public sealed class GenesisSeedRuntime
         lock (_gate) { return _activated ? _seed : null; } // the mind reads the seed ONLY when activated
     }
 
+    /// <summary>
+    /// The seed data for DURABLE STORAGE, regardless of activation (PLAN-ЭТАЛОН Phase 2.2).
+    ///
+    /// Deliberately separate from <see cref="Snapshot"/>: Snapshot is the mind's read gate and
+    /// MUST stay activation-gated (docs/mind.md §7), while the persistence layer has to store
+    /// a pre-ceremony seed too — otherwise a restart between the seeding and the ceremony would
+    /// erase it. This method grants no read access to the mind; it exists for the store.
+    /// </summary>
+    public GenesisSeedData? SeedDataForPersistence()
+    {
+        lock (_gate) { return _seed; }
+    }
+
     /// <summary>Loads the seed data (the ceremony's touchpoint fills it). The data
     /// must be valid; the activation is SEPARATE (the ceremony's act, never automatic).</summary>
     public void Load(GenesisSeedData seed)

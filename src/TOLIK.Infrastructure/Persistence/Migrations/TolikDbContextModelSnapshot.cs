@@ -166,6 +166,119 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("tolik_core_leases", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.GenesisSeedEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("Activated")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("SeededAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Temperament")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("tolik_genesis_seeds", (string)null);
+                });
+
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.GenesisSeedValueEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("integer");
+
+                    b.Property<long>("SeedId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SeedId", "Ordinal")
+                        .IsUnique();
+
+                    b.ToTable("tolik_genesis_seed_values", (string)null);
+                });
+
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.MindSnapshotEntity", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ActivityLevel")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("AttentionTarget")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<double>("Boredom")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("CognitiveLoad")
+                        .HasColumnType("double precision");
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("integer");
+
+                    b.Property<double>("Curiosity")
+                        .HasColumnType("double precision");
+
+                    b.Property<bool>("FailurePatternSurfaced")
+                        .HasColumnType("boolean");
+
+                    b.Property<double>("Frustration")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTimeOffset?>("LastInteraction")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("Novelty")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTimeOffset>("RecordedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<double>("Satisfaction")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("SocialDrive")
+                        .HasColumnType("double precision");
+
+                    b.Property<double>("Uncertainty")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("UncertaintyNote")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("tolik_mind_snapshots", (string)null);
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.SystemRecord", b =>
                 {
                     b.Property<string>("Key")
@@ -579,6 +692,17 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                     b.ToTable("tolik_users", (string)null);
                 });
 
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.GenesisSeedValueEntity", b =>
+                {
+                    b.HasOne("TOLIK.Infrastructure.Persistence.GenesisSeedEntity", "Seed")
+                        .WithMany("CoreValues")
+                        .HasForeignKey("SeedId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Seed");
+                });
+
             modelBuilder.Entity("TOLIK.Infrastructure.Persistence.TolikDevice", b =>
                 {
                     b.HasOne("TOLIK.Infrastructure.Persistence.TolikUser", null)
@@ -619,6 +743,11 @@ namespace TOLIK.Infrastructure.Persistence.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("TOLIK.Infrastructure.Persistence.GenesisSeedEntity", b =>
+                {
+                    b.Navigation("CoreValues");
                 });
 #pragma warning restore 612, 618
         }

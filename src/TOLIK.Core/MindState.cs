@@ -104,6 +104,40 @@ public sealed class MindState
         }
     }
 
+    /// <summary>
+    /// Restores the state from a persisted snapshot (PLAN-ЭТАЛОН Phase 2.3 — continuity).
+    /// Only a snapshot of the CURRENT version is accepted: an older version is a different
+    /// meaning of the same numbers, and silently reinterpreting it would be a fabricated
+    /// state (§50). The caller decides what to do with an unusable snapshot; this method
+    /// refuses rather than guesses.
+    /// </summary>
+    public void Restore(MindSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot.Version != SnapshotVersion)
+            throw new ArgumentException(
+                $"Unsupported mind snapshot version {snapshot.Version} (this build understands {SnapshotVersion}).",
+                nameof(snapshot));
+        lock (_gate)
+        {
+            _boredom = Clamp01(snapshot.Boredom);
+            _curiosity = Clamp01(snapshot.Curiosity);
+            _novelty = Clamp01(snapshot.Novelty);
+            _frustration = Clamp01(snapshot.Frustration);
+            _satisfaction = Clamp01(snapshot.Satisfaction);
+            _socialDrive = Clamp01(snapshot.SocialDrive);
+            _cognitiveLoad = Clamp01(snapshot.CognitiveLoad);
+            _activityLevel = snapshot.ActivityLevel?.Trim().ToUpperInvariant() switch
+            {
+                "REST" or "LOW" or "NORMAL" or "FOCUSED" or "INTENSE" => snapshot.ActivityLevel!.Trim().ToUpperInvariant(),
+                _ => "REST"
+            };
+            _attentionTarget = string.IsNullOrWhiteSpace(snapshot.AttentionTarget) ? null : snapshot.AttentionTarget.Trim();
+            _uncertaintyNote = string.IsNullOrWhiteSpace(snapshot.UncertaintyNote) ? null : snapshot.UncertaintyNote.Trim();
+            _updatedAt = snapshot.UpdatedAt;
+        }
+    }
+
     private static double Clamp01(double value) => Math.Clamp(value, 0.0, 1.0);
 }
 

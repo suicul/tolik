@@ -22,6 +22,11 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
 
     public DbSet<BaselineEntity> Baselines => Set<BaselineEntity>();
 
+    // PLAN-ЭТАЛОН Phase 2 — the mind's continuity across restarts (blockers Б1/Б3).
+    public DbSet<MindSnapshotEntity> MindSnapshots => Set<MindSnapshotEntity>();
+    public DbSet<GenesisSeedEntity> GenesisSeeds => Set<GenesisSeedEntity>();
+    public DbSet<GenesisSeedValueEntity> GenesisSeedValues => Set<GenesisSeedValueEntity>();
+
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
         EnsureAuditAppendOnly();
@@ -162,5 +167,33 @@ public sealed class TolikDbContext(DbContextOptions<TolikDbContext> options) : D
         // mirroring the GenesisIdentity at-most-one pattern. The table is identity-
         // protected machinery, part of the protected core (self-evolution §4 protected
         // areas): never writable by tool/self-evolution paths.
+
+        // PLAN-ЭТАЛОН Phase 2.3 — the mind's state across restarts. Singleton, same
+        // at-most-one-row discipline as the lease: the mind has ONE current state.
+        var mind = modelBuilder.Entity<MindSnapshotEntity>();
+        mind.ToTable("tolik_mind_snapshots");
+        mind.HasKey(x => x.Id);
+        mind.Property(x => x.Id).ValueGeneratedNever();
+        mind.Property(x => x.ActivityLevel).HasMaxLength(16).IsRequired();
+        mind.Property(x => x.AttentionTarget).HasMaxLength(256);
+        mind.Property(x => x.UncertaintyNote).HasMaxLength(512);
+
+        // PLAN-ЭТАЛОН Phase 2.2 — the Genesis seed (data + activation) across restarts.
+        var seed = modelBuilder.Entity<GenesisSeedEntity>();
+        seed.ToTable("tolik_genesis_seeds");
+        seed.HasKey(x => x.Id);
+        seed.Property(x => x.Id).ValueGeneratedNever();
+        seed.Property(x => x.Temperament).HasMaxLength(256).IsRequired();
+        seed.HasMany(x => x.CoreValues)
+            .WithOne(x => x.Seed)
+            .HasForeignKey(x => x.SeedId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var seedValue = modelBuilder.Entity<GenesisSeedValueEntity>();
+        seedValue.ToTable("tolik_genesis_seed_values");
+        seedValue.HasKey(x => x.Id);
+        seedValue.Property(x => x.Value).HasMaxLength(128).IsRequired();
+        // The order of the core values is part of the seed — never a bag.
+        seedValue.HasIndex(x => new { x.SeedId, x.Ordinal }).IsUnique();
     }
 }

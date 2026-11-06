@@ -51,6 +51,10 @@ public static class GenesisPreflight
         var developmentRows = await db.Memories.CountAsync(
             x => x.Origin == "development", cancellationToken);
         if (developmentRows > 0) failed.Add($"memory_separation:{developmentRows}");
+        // The Genesis seed (docs/genesis-ceremony.md Шаг 4, PLAN-ЭТАЛОН Phase 2.2): the
+        // ceremony is the birth of an identity WITH its temperament and values, so a birth
+        // with no seed is refused rather than silently producing a personality-less mind.
+        if (!await db.GenesisSeeds.AnyAsync(cancellationToken)) failed.Add("genesis_seed_loaded");
         return failed.Count == 0 ? GenesisPreflightResult.Ok : new GenesisPreflightResult(false, failed);
     }
 }
@@ -110,7 +114,15 @@ public sealed class GenesisService(IDbContextFactory<TolikDbContext> contextFact
 
         const string eventType = "genesis.ceremony";
         const string decision = "ALLOW";
-        var reason = $"instance_born:{identity.InstanceId:D};owner:{ownerIdentity:D}";
+        // The seed's activation flips IN THE SAME TRANSACTION as the birth (PLAN-ЭТАЛОН
+        // Phase 2.2): the identity and the right to read its own seed are one atomic act.
+        // If the row is absent (a direct service call that bypassed the preflight gate), the
+        // ceremony still commits — but the event records the absence honestly rather than
+        // pretending the mind was born with a seed it does not have.
+        var seed = await db.GenesisSeeds.SingleOrDefaultAsync(x => x.Id == GenesisSeedEntity.SingletonId, cancellationToken);
+        if (seed is not null) seed.Activated = true;
+        var seedState = seed is null ? "seed:absent" : "seed:activated";
+        var reason = $"instance_born:{identity.InstanceId:D};owner:{ownerIdentity:D};{seedState}";
         db.AuditEvents.Add(new AuditEvent
         {
             Id = Guid.NewGuid(),

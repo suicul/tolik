@@ -1,4 +1,4 @@
-﻿namespace TOLIK.Core;
+namespace TOLIK.Core;
 
 /// <summary>
 /// MindRuntime (docs/mind.md MI-0..2 + PLAN REFORM PRG-1a): TOLIK's ONE running mind —
@@ -63,6 +63,41 @@ public sealed class MindRuntime
 
     /// <summary>Point-in-time mind snapshot (the versioned MI-0 record).</summary>
     public MindSnapshot Snapshot() { lock (_gate) { return _state.Snapshot(); } }
+
+    /// <summary>
+    /// Captures everything needed to survive a restart (PLAN-ЭТАЛОН Phase 2.3).
+    /// Reads only; the caller decides when to persist.
+    /// </summary>
+    public MindContinuityRecord CaptureContinuity()
+    {
+        lock (_gate)
+        {
+            return new MindContinuityRecord(
+                _state.Snapshot(),
+                _consecutiveFailures,
+                _failurePatternSurfaced,
+                _lastInteraction == DateTimeOffset.MinValue ? null : _lastInteraction,
+                _uncertainty);
+        }
+    }
+
+    /// <summary>
+    /// Restores the mind from a persisted capture (PLAN-ЭТАЛОН Phase 2.3). Called once at
+    /// startup, before the first tick — never on a live mind, because merging two histories
+    /// is a different problem than resuming one.
+    /// </summary>
+    public void Restore(MindContinuityRecord record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        lock (_gate)
+        {
+            _state.Restore(record.Snapshot);
+            _consecutiveFailures = Math.Max(0, record.ConsecutiveFailures);
+            _failurePatternSurfaced = record.FailurePatternSurfaced;
+            _lastInteraction = record.LastInteraction ?? DateTimeOffset.MinValue;
+            _uncertainty = Math.Clamp(record.Uncertainty, 0.0, 1.0);
+        }
+    }
 
     /// <summary>A meaningful user interaction (a chat message, a voice turn): resets
     /// the inactivity clock and bumps the social drive — real input, never invented.</summary>
