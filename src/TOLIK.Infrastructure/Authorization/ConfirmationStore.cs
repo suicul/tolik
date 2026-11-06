@@ -35,15 +35,51 @@ public sealed record PendingConfirmation(
 {
     public bool Approved { get; internal set; }
     public bool Consumed { get; internal set; }
+
+    /// <summary>
+    /// When the owner proved MFA for THIS confirmation, or null if they never did
+    /// (PLAN-ЭТАЛОН Phase 1.1). Set only by the approve endpoint after a real TOTP
+    /// verification — never by a client claiming it.
+    /// </summary>
+    public DateTimeOffset? MfaVerifiedAt { get; internal set; }
+
     public bool Expired => DateTimeOffset.UtcNow > ExpiresAt;
 
     /// <summary>§9: critical operations require strong auth, not just a voice "yes".</summary>
     public bool RequiresMfa => EffectiveRisk == ToolRiskLevel.Critical;
+
+    /// <summary>
+    /// True when the MFA proof is recent enough to still count at the moment of use. A
+    /// proof that was valid when the owner approved must not authorize a step that runs
+    /// long afterwards — the whole point of strong auth is that it is close in time to
+    /// the act it authorizes.
+    /// </summary>
+    public bool HasFreshMfa(DateTimeOffset now, TimeSpan lifetime) =>
+        MfaVerifiedAt is { } verifiedAt && now - verifiedAt <= lifetime;
+}
+
+/// <summary>
+/// The outcome of consuming a confirmation: whether the confirmation authorized the step
+/// at all, and whether a REAL MFA proof backed it (PLAN-ЭТАЛОН Phase 1.1).
+/// Returning both facts separately is what lets the dispatcher pass the truth to
+/// AuthorizationPolicy instead of the hardcoded `MfaValid: false` it used before.
+/// </summary>
+public sealed record ConfirmationConsumption(bool Valid, bool MfaValid)
+{
+    public static readonly ConfirmationConsumption None = new(false, false);
 }
 
 public sealed class ConfirmationStore
 {
     public static readonly TimeSpan DefaultLifetime = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long an MFA proof stays usable after the owner proved it (PLAN-ЭТАЛОН Phase 1.1).
+    /// Long enough for the step to be dispatched, short enough that the strong auth still
+    /// corresponds to the act the owner approved.
+    /// </summary>
+    public static readonly TimeSpan MfaProofLifetime = TimeSpan.FromMinutes(2);
+
     private readonly ConcurrentDictionary<Guid, PendingConfirmation> _items = new();
 
     /// <summary>Creates (idempotently) a pending confirmation for the binding. Returns the confirmation.</summary>
@@ -69,27 +105,39 @@ public sealed class ConfirmationStore
         return confirmation;
     }
 
-    /// <summary>Owner approves a pending confirmation (does not consume it).</summary>
-    public bool Approve(Guid confirmationId)
+    /// <summary>
+    /// Owner approves a pending confirmation (does not consume it).
+    ///
+    /// PLAN-ЭТАЛОН Phase 1.1: a Critical confirmation requires an MFA proof, and the proof
+    /// must be supplied HERE — a Critical approval without one fails closed rather than
+    /// creating an approval that the dispatcher would have to interpret. The proof's
+    /// timestamp comes from a verified TOTP, never from the caller's claim.
+    /// </summary>
+    public bool Approve(Guid confirmationId, DateTimeOffset? mfaVerifiedAt = null)
     {
         if (!_items.TryGetValue(confirmationId, out var confirmation)) return false;
         if (confirmation.Consumed || confirmation.Expired) return false;
+        if (confirmation.RequiresMfa && mfaVerifiedAt is null) return false; // fail closed
         confirmation.Approved = true;
+        confirmation.MfaVerifiedAt = mfaVerifiedAt;
         return true;
     }
 
     /// <summary>
     /// Single-use consumption: succeeds only for an approved, non-expired, non-consumed
     /// confirmation whose binding hash matches the exact task/step/capability/resource.
+    /// Reports the MFA fact alongside validity so the caller can hand the REAL value to
+    /// the authorization policy.
     /// </summary>
-    public bool Consume(Guid taskId, int stepNumber, AgentCapability capability, string resource)
+    public ConfirmationConsumption Consume(Guid taskId, int stepNumber, AgentCapability capability, string resource)
     {
         var bindingHash = ConfirmationBinding.Hash(taskId, stepNumber, capability, resource);
         var confirmation = _items.Values.FirstOrDefault(x => x.TaskId == taskId && x.BindingHash == bindingHash);
         if (confirmation is null || !confirmation.Approved || confirmation.Consumed || confirmation.Expired)
-            return false;
+            return ConfirmationConsumption.None;
         confirmation.Consumed = true;
-        return true;
+        var mfaValid = confirmation.HasFreshMfa(DateTimeOffset.UtcNow, MfaProofLifetime);
+        return new ConfirmationConsumption(true, mfaValid);
     }
 
     public PendingConfirmation? Get(Guid confirmationId) =>

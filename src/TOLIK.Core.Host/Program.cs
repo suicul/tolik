@@ -1686,13 +1686,26 @@ app.MapPost("/tasks/{taskId:guid}/confirmations/{confirmationId:guid}/approve", 
         return Results.StatusCode(StatusCodes.Status403Forbidden);
     }
     // §9: critical escalations require strong auth (MFA) — plain approval is not enough.
+    // PLAN-ЭТАЛОН Phase 1.1: this used to be an unconditional 403 with no way to satisfy
+    // it, which made every Critical capability (including InstallTolikUpdate) impossible
+    // rather than protected. The owner now proves a real TOTP here, and the proof travels
+    // with the confirmation to the dispatcher.
+    DateTimeOffset? mfaVerifiedAt = null;
     if (confirmation.RequiresMfa)
     {
-        await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "confirmation.approve", "DENY", "strong_auth_required", principal,
-            confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "denied", cancellationToken);
-        return Results.StatusCode(StatusCodes.Status403Forbidden);
+        var body = await context.Request.ReadFromJsonAsync<ConfirmationApproveRequest>(cancellationToken);
+        var mfa = body?.MfaDeviceId is { } deviceId
+            ? await identity.VerifyMfaAsync(deviceId, body.MfaCode ?? string.Empty, cancellationToken)
+            : new MfaVerificationResult(false, "mfa_device_required");
+        if (!mfa.Success)
+        {
+            await audit.WriteAuthorizationAsync((Guid)context.Items["CorrelationId"]!, "confirmation.approve", "DENY", "strong_auth_required", principal,
+                confirmation.Capability, confirmation.EffectiveRisk, confirmation.Resource, "denied", cancellationToken);
+            return Results.Json(new { error = "strong_auth_required", reason = mfa.Error }, statusCode: StatusCodes.Status403Forbidden);
+        }
+        mfaVerifiedAt = DateTimeOffset.UtcNow;
     }
-    if (!confirmations.Approve(confirmationId))
+    if (!confirmations.Approve(confirmationId, mfaVerifiedAt))
         return Results.Conflict(new { error = "confirmation_invalid_state" });
             // Live-loop fix (CU-6): the confirmation park left the task Paused; the designed
             // continuation is the OWNER re-running the execute request - which needs the
@@ -1760,9 +1773,15 @@ app.MapPost("/tasks/{taskId:guid}/execute", async (Guid taskId, PlanRequest requ
                     if (!scopeValidation.Allowed)
                         throw new UnauthorizedAccessException($"task_scope:{scopeValidation.Reason}");
                 }
-                var confirmationValid = confirmations.Consume(taskId, currentStep, capability, resource);
+                // PLAN-ЭТАЛОН Phase 1.1: the MFA fact is REAL here, not the hardcoded
+                // false value this line used to pass. That constant made
+                // InstallTolikUpdate (Critical) permanently denied — self-update was
+                // structurally impossible — while looking like a security check. The
+                // value now comes from a TOTP the owner actually proved at approval time.
+                var consumption = confirmations.Consume(taskId, currentStep, capability, resource);
+                var confirmationValid = consumption.Valid;
                 var decision = AuthorizationPolicy.Evaluate(new AuthorizationRequest(
-                    principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: false,
+                    principal, capability, declaredRisk, resource, resource, confirmationValid, MfaValid: consumption.MfaValid,
                     OfflineMode: router.IsOfflineMode, CoreLocked: securityState.IsLocked, AuthorizationExpiresAt: validLease.ExpiresAt));
                 if (decision is AuthorizationDecision.ConfirmationRequired)
                 {
@@ -3603,6 +3622,8 @@ public sealed record LockRequest(string? Reason);
 public sealed record UnlockRequest(string? UnlockCode);
 // PLAN-ЭТАЛОН Phase 2.1 — the pre-ceremony Genesis seed (data only; activation is here never).
 public sealed record GenesisSeedRequest(string? Temperament, string[]? CoreValues, Guid MfaDeviceId, string? MfaCode);
+// PLAN-ЭТАЛОН Phase 1.1 — the owner's strong-auth proof for a Critical confirmation.
+public sealed record ConfirmationApproveRequest(Guid? MfaDeviceId, string? MfaCode);
 public sealed record ModelPreferenceRequest(string? Mode);
 public sealed record EnrollmentTokenRequest(string? Role, string? Reason);
 public sealed record TokenEnrollRequest(string? EnrollmentToken, string InstallationId, string PublicKey);
